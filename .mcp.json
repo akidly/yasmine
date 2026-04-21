@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "yasmine": {
+      "type": "http",
+      "url": "https://mcp.yasmine.akidly.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${YASMINE_API_TOKEN}"
+      }
+    }
+  }
+}

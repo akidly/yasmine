@@ -4,15 +4,31 @@
 
 ## Status
 
-Beta — `v0.1.0`. API surface stable on `/v1/`, plugin schema may iterate.
+Beta — `v0.1.1`. API surface stable on `/v1/`, plugin schema may iterate.
 
-## Install
+## Setup
 
-```
-/plugin install yasmine@akidly/yasmine
-```
+1. Get your Yasmine reseller API key from https://docs.yasmine.akidly.com/getting-started (format: `yk_...`).
 
-Claude Code clones the default branch, registers the MCP server declared in `.claude-plugin/plugin.json`, and prompts for your Yasmine reseller API key on first enable. The token is stored in your OS keychain and forwarded to `https://mcp.yasmine.akidly.com/mcp/` as a `Bearer` header on each MCP call.
+2. Export it as an env var **before launching Claude Code** :
+
+   **Linux / macOS (bash/zsh)**
+   ```
+   export YASMINE_API_TOKEN=yk_your_key_here
+   ```
+
+   **Windows (PowerShell, persistent)**
+   ```
+   [Environment]::SetEnvironmentVariable('YASMINE_API_TOKEN', 'yk_your_key_here', 'User')
+   ```
+   Then **restart Claude Code** (close all instances) for the env var to be picked up.
+
+3. Install the plugin :
+   ```
+   claude plugin install yasmine@akidly/yasmine
+   ```
+
+4. Verify : the `yasmine` MCP server should appear in your active servers list, exposing 8 tools.
 
 ## Prerequisites
 
@@ -45,12 +61,9 @@ Claude Code clones the default branch, registers the MCP server declared in `.cl
 
 ## Configuration
 
-The plugin's `userConfig` declares two fields :
+The MCP endpoint is hard-coded to production (`https://mcp.yasmine.akidly.com/mcp/`). For local dev you can override it by editing `.mcp.json` after install (in `~/.claude/plugins/cache/akidly/yasmine/<version>/`) — but normal users should not need to.
 
-| Field | Default | Notes |
-|-------|---------|-------|
-| `api_token` | (prompted) | Your `yk_...` reseller key. Stored in OS keychain (`sensitive: true`). |
-| `api_endpoint` | `https://mcp.yasmine.akidly.com/mcp/` | Override only for local dev (e.g. `http://127.0.0.1:9001/mcp/`). |
+The Bearer token is read from the `YASMINE_API_TOKEN` env var at MCP server startup time. Aligned with the official Anthropic plugin pattern (cf. `github` plugin from `claude-plugins-official`).
 
 ## Documentation
 
