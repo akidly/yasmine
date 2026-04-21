@@ -1,0 +1,29 @@
+{
+  "name": "yasmine",
+  "version": "0.1.0",
+  "description": "Yasmine voice AI API — automated outbound call confirmations for reseller workflows (MA/DZ/TN/FR).",
+  "author": {"name": "Akidly"},
+  "userConfig": {
+    "api_token": {
+      "type": "string",
+      "title": "Yasmine API token",
+      "description": "Your Yasmine reseller API key (starts with yk_). Get one at https://docs.yasmine.akidly.com/getting-started",
+      "sensitive": true
+    },
+    "api_endpoint": {
+      "type": "string",
+      "title": "MCP endpoint URL",
+      "description": "MCP endpoint URL (default: production). Override for local dev.",
+      "default": "https://mcp.yasmine.akidly.com/mcp/"
+    }
+  },
+  "mcpServers": {
+    "yasmine": {
+      "type": "http",
+      "url": "${user_config.api_endpoint}",
+      "headers": {
+        "Authorization": "Bearer ${user_config.api_token}"
+      }
+    }
+  }
+}
