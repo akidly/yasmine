@@ -1,0 +1,2131 @@
+openapi: 3.1.0
+info:
+  title: Yasmine API
+  version: 0.1.0
+  summary: Agent vocal IA pour confirmation de commandes — API reseller.
+  description: |
+    API Yasmine — déclenche des appels IA sortants pour confirmer des commandes,
+    et (à venir) gère crédits, webhooks, clés API et merchants en self-service.
+
+    **Statut des endpoints** :
+    - `x-status: live` — implémenté et appelable en prod aujourd'hui.
+    - `x-status: planned` — cible contractuelle, pas encore implémentée. `404` en attendant. Disponible après M4 (cf roadmap interne).
+
+    **Format d'erreur** : toutes les erreurs sous `/v1/*` sont au format
+    RFC 7807 `application/problem+json` — cf `docs/errors.md`.
+
+    **Authentification** : Bearer token `yk_...` sur tous les endpoints
+    `/v1/*`. Cf `docs/getting-started.md`.
+
+    **Traçabilité** (P1-5) : chaque requête reçoit un header response
+    `X-Request-ID` (UUID v4). Vous pouvez envoyer votre propre UUID v4
+    via le header request de même nom — Yasmine le respecte si format
+    strict valide, sinon régénère. Le `request_id` apparaît aussi dans
+    le body des réponses d'erreur RFC 7807 et dans nos logs serveurs.
+    Joignez-le à tout ticket support.
+
+    Voir aussi : `/docs/getting-started.md`, `/docs/examples.md`,
+    `/docs/webhooks.md`, `/docs/errors.md`, `/docs/versioning.md`.
+  contact:
+    name: Yasmine API
+    email: cbensassi118@yahoo.fr
+    url: https://docs.yasmine.akidly.com
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.yasmine.akidly.com
+    description: Production
+tags:
+  - name: Calls
+    description: Déclencher et consulter les appels IA sortants.
+  - name: Account
+    description: Profil reseller, solde, consommation, transactions, clés API, webhooks sortants.
+  - name: Merchants
+    description: Référentiel des boutiques du reseller.
+  - name: Webhooks
+    description: |
+      Configuration self-service du webhook sortant unique par reseller.
+      L'émission réelle des events (catalogue `call.*`) arrive en Phase 2
+      — cf `docs/webhooks.md`.
+  - name: API Keys
+    description: |
+      Gestion self-service des clés API du reseller (P1-4). CRUD simple :
+      liste, création (secret visible **une seule fois**), révocation
+      soft. Pas de scopes, pas d'expiration automatique — la seule
+      bascule sécurité est la révocation manuelle.
+  - name: Internal
+    description: |
+      Endpoints techniques appelés uniquement par des systèmes externes
+      (Meta WhatsApp). Ne sont **pas** destinés à l'intégration reseller —
+      documentés ici pour transparence opérationnelle uniquement.
+security:
+  - bearerAuth: []
+paths:
+  # -------------------------------------------------------------------------
+  # Calls — reseller-facing
+  # -------------------------------------------------------------------------
+  /v1/calls:
+    post:
+      operationId: createCall
+      summary: Déclencher un appel
+      tags: [Calls]
+      x-status: live
+      description: |
+        Crée un appel IA sortant. Le canal (WhatsApp, GSM, Asterisk) est
+        choisi côté Yasmine via la configuration serveur — transparent
+        pour le reseller.
+
+        **Idempotency-Key obligatoire** (P0-1) : header `Idempotency-Key`
+        requis (1-255 chars, UUID v4 recommandé). Scope par reseller, TTL
+        24 h. Un retry réseau (504 Cloudflare, time-out client) avec la
+        même clé renvoie la réponse stockée bit-for-bit (`X-Idempotent-
+        Replay: true`) sans déclencher d'appel supplémentaire. Réutiliser
+        la même clé avec un body différent retourne `409
+        idempotency_key_conflict`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallCreate"
+            examples:
+              maroc_basic:
+                summary: Appel simple Maroc
+                value:
+                  phone_number: "+212612345678"
+                  merchant_ref: "boutique-casa-01"
+                  customer_name: "Ahmed Bennani"
+                  purpose: "confirmation"
+                  amount: "249.00"
+                  currency: "MAD"
+                  country: "MA"
+              france_with_metadata:
+                summary: Appel France avec metadata
+                value:
+                  phone_number: "+33612345678"
+                  merchant_ref: "boutique-paris-01"
+                  customer_name: "Claire Dupont"
+                  purpose: "relance_paiement"
+                  amount: "49.90"
+                  currency: "EUR"
+                  country: "FR"
+                  metadata:
+                    order_id: "CMD-2026-00123"
+                    invoice_ref: "INV-789"
+      responses:
+        "201":
+          description: |
+            Appel créé et mis en file. Si `X-Idempotent-Replay: true` est
+            présent dans les headers, la réponse est un replay d'une
+            requête antérieure identique (même clé d'idempotence + même
+            body), aucun nouvel appel n'a été déclenché.
+          headers:
+            Location:
+              schema: { type: string }
+              example: /v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862
+            X-Idempotent-Replay:
+              description: |
+                Présent uniquement sur un replay idempotent. Vaut
+                `"true"`. Absent sur la première occurrence d'une clé.
+              schema: { type: string, enum: ["true"] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallOut"
+        "400": { $ref: "#/components/responses/IdempotencyKeyError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/InsufficientBalance" }
+        "409": { $ref: "#/components/responses/IdempotencyKeyConflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      operationId: listCalls
+      summary: Lister les appels
+      tags: [Calls]
+      x-status: live
+      description: |
+        Liste paginée des appels du reseller authentifié (P1-3).
+        Tri `created_at DESC` avec tie-break stable `id DESC`.
+
+        **Curseur opaque** : passer la valeur `next_cursor` de la page
+        précédente en `?cursor=...`. Le curseur est signé HMAC-SHA256
+        côté serveur (TTL 24 h) — format opaque pour le client, pas
+        de structure à parser.
+
+        **Filtres combinables** : `status`, `merchant_id`, `since`,
+        `until`. Tous optionnels.
+
+        **Erreurs de curseur** : `400 invalid_cursor` (format invalide,
+        signature tampered, ou clé serveur tournée) ou `400
+        cursor_expired` (> 24 h). Le client refait la 1re requête
+        sans `cursor`.
+      parameters:
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string }
+          description: |
+            Curseur opaque retourné par `next_cursor` de la page
+            précédente. Absent pour la première page.
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Nombre max d'items par page. > 200 → 422.
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [queued, dialing, in_progress, ended, failed]
+          description: Filtre exact sur `calls.status` (col GENERATED).
+        - in: query
+          name: merchant_id
+          required: false
+          schema: { type: string, format: uuid }
+        - in: query
+          name: since
+          required: false
+          schema: { type: string, format: date-time }
+          description: Minimum `created_at` (inclusif).
+        - in: query
+          name: until
+          required: false
+          schema: { type: string, format: date-time }
+          description: Maximum `created_at` (inclusif).
+      responses:
+        "200":
+          description: Page paginée (enveloppe `data`/`next_cursor`/`has_more`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedCalls" }
+        "400":
+          description: |
+            Curseur invalide/expiré (slug `invalid_cursor` ou
+            `cursor_expired`). Refaire la 1re requête sans `cursor`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: |
+            `CURSOR_SIGNING_KEY` absente côté serveur (fail-closed P1-3).
+            Contacter le support.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /v1/calls/{id}:
+    get:
+      operationId: getCall
+      summary: Récupérer un appel
+      tags: [Calls]
+      x-status: live
+      description: |
+        Lit l'état courant d'un appel scopé au reseller authentifié
+        (P0-2). Utile pour réconcilier après un webhook perdu ou un
+        crash mid-retry.
+
+        **Anti-énumération** : trois cas renvoient un 404
+        `call_not_found` byte-identique :
+        - UUID syntaxiquement invalide (`/v1/calls/not-a-uuid`).
+        - UUID valide mais inconnu.
+        - UUID propriété d'un autre reseller.
+
+        Aucun champ ne fuite l'existence ou le propriétaire.
+      parameters:
+        - $ref: "#/components/parameters/CallId"
+      responses:
+        "200":
+          description: Détails de l'appel.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/CallNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/calls/{id}/events:
+    get:
+      operationId: getCallEvents
+      summary: Timeline granulaire d'un appel
+      tags: [Calls]
+      x-status: planned
+      description: "Disponible après M4."
+      parameters:
+        - $ref: "#/components/parameters/CallId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Liste d'events (queued, ringing, accepted, ended, …).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallEventList" }
+
+  /v1/calls/{id}/transcript:
+    get:
+      operationId: getCallTranscript
+      summary: Transcript + summary d'un appel
+      tags: [Calls]
+      x-status: planned
+      description: "Disponible après M4."
+      parameters:
+        - $ref: "#/components/parameters/CallId"
+      responses:
+        "200":
+          description: Transcript structuré.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transcript" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/calls/{id}/cancel:
+    post:
+      operationId: cancelCall
+      summary: Annuler un appel en cours
+      tags: [Calls]
+      x-status: live
+      description: |
+        Annule un appel **en cours** (rail APPEL en `dialing`/`ringing`/
+        `connected`, ou demande encore `queued`). Pattern Stripe-like sur
+        ressource vivante.
+
+        **Facturation** :
+        - Avant `connected` → `billed_seconds = 0`, aucun débit.
+        - `connected` → `billed_seconds = ceil(now - accepted_at)` avec
+          plancher minimum 10 s (cf `docs/pricing.md`). Débit immédiat.
+
+        **Idempotence** : si l'appel est déjà terminal (`ended`/`failed`/
+        `cancelled`), réponse `200 OK` no-op : pas de mutation DB, pas
+        d'event webhook ré-émis, pas de débit.
+
+        **Event sortant** : `call.cancelled` émis une seule fois sur cancel
+        effectif. Distinct de `call.ended` (fin naturelle) — cf
+        `docs/webhooks.md` §7.
+
+        **Scoping** : si le `call_id` appartient à un autre reseller, 404
+        `call_not_found` (pas de leak d'existence).
+      parameters:
+        - $ref: "#/components/parameters/CallId"
+      responses:
+        "200":
+          description: Appel annulé (ou déjà terminal, idempotent).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallCancelOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Appel introuvable ou appartenant à un autre reseller.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  # -------------------------------------------------------------------------
+  # Account — profil, solde, usage, clés, webhooks sortants
+  # -------------------------------------------------------------------------
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Identité du reseller courant
+      tags: [Account]
+      x-status: live
+      description: |
+        Retourne les 5 champs d'identité du reseller authentifié (P1-1).
+        Anti-BOPLA : pas de `balance_seconds` (voir `/v1/me/balance`),
+        pas de `status` interne, pas de compteurs.
+      responses:
+        "200":
+          description: Identité complète.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/me/transactions:
+    get:
+      operationId: listTransactions
+      summary: Ledger paginé (topup, debit_call, refund, adjustment)
+      tags: [Account]
+      x-status: live
+      description: |
+        Historique paginé du ledger `credit_transactions` (P1-1).
+        Tri `created_at DESC, id DESC` (tie-break stable). Curseur
+        opaque HMAC-SHA256 (TTL 24 h) réutilisé de P1-3 — même
+        contrat d'erreur `invalid_cursor` / `cursor_expired`.
+
+        `seconds` est **signé** : positif = crédit (topup/refund),
+        négatif = débit (debit_call). Pas de `currency` — la devise
+        métier est "secondes facturables" aujourd'hui.
+      parameters:
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: since
+          required: false
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Page paginée.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedTransactions" }
+        "400":
+          description: |
+            Curseur invalide/expiré (`invalid_cursor` / `cursor_expired`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: |
+            `CURSOR_SIGNING_KEY` absente côté serveur.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /v1/me/usage:
+    get:
+      operationId: getUsage
+      summary: Consommation mensuelle agrégée
+      tags: [Account]
+      x-status: live
+      description: |
+        Agrégats sur la période `YYYY-MM` (P1-1). Défaut = mois
+        courant UTC si `?period` absent. Fenêtre semi-open
+        `[period_start, period_end)` sur `calls.created_at` (date de
+        soumission, pas de fin).
+
+        **Ventilation** basée sur `calls.call_status` :
+        - `ended` → `breakdown.completed_*`
+        - `failed` → `breakdown.failed_calls`
+        - `cancelled` → `breakdown.cancelled_calls`
+        - in-flight (`queued/dialing/ringing/connected/not_started`)
+          comptés uniquement dans `total_calls`.
+
+        Période sans appel → **200 avec zéros partout** (pas 404).
+      parameters:
+        - in: query
+          name: period
+          required: false
+          schema:
+            type: string
+            pattern: "^\\d{4}-(0[1-9]|1[0-2])$"
+          example: "2026-04"
+          description: Défaut = mois courant UTC si absent.
+      responses:
+        "200":
+          description: Agrégats.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsageOut" }
+        "400":
+          description: |
+            Format `period` invalide (`invalid_period_format`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/me/api-keys:
+    get:
+      operationId: listApiKeys
+      summary: Lister les clés API (sans le secret)
+      tags: [API Keys]
+      x-status: live
+      description: |
+        Retourne les clés API du reseller courant (P1-4). Inclut les
+        clés actives ET révoquées (historique complet). Tri
+        `created_at DESC`. Jamais de pagination — en pratique un
+        reseller a < 10 clés.
+
+        **Anti-BOPLA strict** : ni `key_hash`, ni `secret_key`, seul le
+        `key_prefix` (12 chars) est exposé.
+      responses:
+        "200":
+          description: Liste des clés.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyListOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      operationId: createApiKey
+      summary: Créer une nouvelle clé API
+      tags: [API Keys]
+      x-status: live
+      description: |
+        Génère une nouvelle clé API (P1-4). Pattern Stripe/GitHub :
+        la `secret_key` est **visible UNE SEULE FOIS** dans la réponse
+        201. Le serveur n'en persiste que le hash SHA-256.
+
+        **Rate-limit spécifique 5/min** (cumulé avec 600/min global).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApiKeyCreateIn" }
+            example:
+              label: "ci-prod"
+      responses:
+        "201":
+          description: |
+            Clé créée. `secret_key` visible UNE FOIS ici — à stocker
+            immédiatement côté reseller.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyCreatedOut" }
+              example:
+                id: "3f8e9d12-4b5a-4c6d-8e7f-123456789abc"
+                key_prefix: "yk_Xa7bC3dE5f"
+                label: "ci-prod"
+                created_at: "2026-04-21T12:00:00Z"
+                secret_key: "yk_Xa7bC3dE5fG9hI1jK2lM3nO4pQ5rS6tU7vW8xY9zA"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/me/api-keys/{key_id}:
+    delete:
+      operationId: revokeApiKey
+      summary: Révoquer une clé API
+      tags: [API Keys]
+      x-status: live
+      description: |
+        Soft-delete : pose `revoked_at = NOW()` sur la clé (P1-4). La
+        clé apparaîtra toujours dans `GET /v1/me/api-keys` avec
+        `status=revoked` (historique préservé).
+
+        **Anti-énumération** (pattern P0-2) : 404 `api_key_not_found`
+        byte-identique sur 3 cas : UUID malformé, clé inexistante, clé
+        appartenant à un autre reseller.
+
+        Auto-révocation safe : si le reseller révoque la clé qu'il est
+        en train d'utiliser, la requête courante se termine normalement,
+        la suivante retournera 401.
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema: { type: string }
+          description: |
+            UUID v4 de la clé. Format invalide → 400 `invalid_key_id`.
+      responses:
+        "204":
+          description: Clé révoquée.
+        "400":
+          description: |
+            `key_id` n'est pas un UUID valide (`invalid_key_id`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: |
+            Clé inexistante OU appartenant à un autre reseller
+            (`api_key_not_found`, body byte-identique — anti-énum).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/me/api-keys/{key_id}/events:
+    get:
+      operationId: listApiKeyEvents
+      summary: Journal d'audit d'une clé API
+      tags: [API Keys]
+      x-status: live
+      description: |
+        Renvoie les événements associés à une clé API (P1-6). Trois
+        types d'events sont émis par le serveur aujourd'hui :
+
+        - `created` — à la création via `POST /v1/me/api-keys`.
+        - `revoked` — à la révocation via `DELETE /v1/me/api-keys/{id}`
+          (jamais fire si la révocation retourne 404).
+        - `rate_limited` — à chaque réponse 429 de l'API. **Dédupliqué
+          côté serveur** : un seul event par clé par fenêtre de 60 s
+          (garde-fou contre un attaquant qui saturerait l'endpoint).
+
+        **Pagination** (curseur opaque HMAC-SHA256, TTL 24 h, forward-only).
+        Tri `created_at DESC, id DESC`. `limit` max 50.
+
+        **Anti-énumération** (pattern P0-2) : 404 `api_key_not_found`
+        byte-identique si la clé n'existe pas OU appartient à un autre
+        reseller.
+
+        **Anti-BOPLA** : `api_key_id` et `reseller_id` ne sont pas
+        exposés dans la réponse (déjà dans l'URL et le scope tenant).
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema: { type: string }
+          description: UUID v4 de la clé. Format invalide → 400 `invalid_key_id`.
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string }
+          description: Opaque, obtenu via `next_cursor` de la page précédente.
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+      responses:
+        "200":
+          description: Page d'events.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyEventListOut" }
+        "400":
+          description: |
+            `key_id` invalide (`invalid_key_id`) OU curseur corrompu/expiré
+            (`invalid_cursor` / `cursor_expired`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: |
+            Clé inexistante OU appartenant à un autre reseller
+            (`api_key_not_found`, body byte-identique — anti-énum).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: "`CURSOR_SIGNING_KEY` non configurée côté serveur."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /v1/me/balance:
+    get:
+      operationId: getBalance
+      summary: Solde courant du reseller
+      tags: [Account]
+      x-status: live
+      description: |
+        Solde du reseller authentifié, exprimé en **secondes facturables**
+        (P0-2). Un appel coûte son `billed_seconds` (`max(duration_s, 10)`).
+
+        Le solde peut être négatif jusqu'à `-MAX_OVERDRAFT_SECONDS`
+        (default -300 s) sur burst concurrent — protection anti-clé volée.
+
+        `currency` est `null` aujourd'hui (balance en secondes pures),
+        réservé pour une future facturation en monnaie. `updated_at` est
+        l'horodatage du dernier mouvement ledger.
+      responses:
+        "200":
+          description: Solde courant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BalanceOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/me/webhooks/test:
+    post:
+      operationId: triggerWebhookTest
+      summary: Tester son webhook (synchrone)
+      tags: [Webhooks]
+      x-status: live
+      description: |
+        Déclenche un `webhook.test` synchrone vers l'URL configurée du
+        reseller (P1-2). Retourne immédiatement le résultat (HTTP status,
+        latence, erreur éventuelle). **Timeout 5 s, pas de retry**
+        (contrairement aux events réels du dispatcher P0-5).
+
+        Signature HMAC-SHA256 identique aux webhooks réels :
+        `X-Yasmine-Signature: sha256=<hex>`. Le payload contient
+        `data.test=true` pour permettre au reseller de filtrer ces
+        événements en dev.
+
+        **Rate-limit 10/min** spécifique (cumulé avec 600/min global).
+        Toute tentative est tracée dans `webhook_deliveries` avec
+        `event_type='webhook.test'` (visible via `GET /webhooks/deliveries`).
+      responses:
+        "200":
+          description: Test exécuté (succès ou échec — voir `delivered`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookTestOut" }
+        "400":
+          description: |
+            `webhook_url_not_configured` — pas de webhook actif. Configurer
+            d'abord via `POST /v1/me/webhooks`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/me/webhooks/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      summary: Historique paginé des livraisons webhook
+      tags: [Webhooks]
+      x-status: live
+      description: |
+        Audit des livraisons webhook sortantes du reseller (P1-2).
+        Tri `attempted_at DESC, id DESC`. Curseur opaque P1-3.
+
+        **Anti-BOPLA strict** : ni `response_body`, ni `signature_sent`,
+        ni `event_id` brut. `error_message` tronqué à 200 chars.
+
+        Statuts disponibles via `?status=` :
+        - `delivered` : `delivered_at IS NOT NULL` (2xx reçu).
+        - `failed` : `error IS NOT NULL` ou status_code non-2xx.
+        - `pending` : ni l'un ni l'autre (edge case).
+      parameters:
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [delivered, failed, pending]
+        - in: query
+          name: event_type
+          required: false
+          schema: { type: string }
+          example: "call.ended"
+        - in: query
+          name: since
+          required: false
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Page paginée.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedDeliveries" }
+        "400":
+          description: |
+            `invalid_status_filter` (status hors `delivered`/`failed`/
+            `pending`), `invalid_cursor`, ou `cursor_expired`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: |
+            `CURSOR_SIGNING_KEY` absente côté serveur.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /v1/me/webhooks:
+    post:
+      operationId: createWebhook
+      summary: Configurer le webhook sortant
+      tags: [Webhooks]
+      x-status: live
+      description: |
+        Enregistre l'URL du webhook sortant et génère un secret HMAC-SHA256.
+
+        Le **`secret` est affiché UNE SEULE FOIS** dans cette réponse. Il
+        sert à vérifier la signature `X-Yasmine-Signature` des payloads
+        sortants (cf `docs/webhooks.md` §5). À stocker immédiatement côté
+        reseller — aucune route ne permet de le récupérer ensuite.
+
+        1 seul webhook actif par reseller. Pour rotate le secret :
+        `DELETE /v1/me/webhooks` puis `POST` à nouveau.
+
+        **SSRF guard** : l'URL est rejetée 400 si elle pointe vers
+        `localhost`, un TLD `.local`, une IP privée (RFC 1918, loopback,
+        link-local, ULA IPv6) ou utilise un scheme autre que `https`.
+
+        **Note** : l'émission réelle des events (`call.ended`, etc.) est
+        livrée en Phase 2 de C6. Configurer le webhook aujourd'hui ne
+        déclenche encore aucun trafic.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookCreateInput" }
+            examples:
+              prod:
+                summary: Endpoint HTTPS public
+                value:
+                  url: "https://monshop.com/yasmine-webhooks"
+      responses:
+        "201":
+          description: Webhook créé — `secret` affiché UNE fois en clair.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookCreated" }
+        "400":
+          description: URL rejetée par le SSRF guard.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/WebhookUrlRejectedProblem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Webhook déjà configuré. DELETE d'abord pour rotate.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      operationId: getWebhook
+      summary: Consulter la config webhook
+      tags: [Webhooks]
+      x-status: live
+      description: |
+        Retourne la config active. Le `secret` n'est jamais renvoyé —
+        seul `secret_prefix` (6 chars + `…`) est exposé pour permettre
+        au reseller de repérer quel secret est en place.
+      responses:
+        "200":
+          description: Config active du reseller.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookGet" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Aucun webhook configuré.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    delete:
+      operationId: deleteWebhook
+      summary: Désactiver le webhook
+      tags: [Webhooks]
+      x-status: live
+      description: |
+        Soft-delete : la config passe en `active=false`. L'historique
+        `webhook_deliveries` reste intact (pour audit).
+      responses:
+        "204": { description: Webhook désactivé. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Aucun webhook configuré.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/me/webhooks/rotate-secret:
+    post:
+      operationId: rotateWebhookSecret
+      summary: Rotate le signing secret HMAC
+      tags: [Webhooks]
+      x-status: live
+      description: |
+        **P1-8** — Rotate atomiquement le `signing_secret` HMAC-SHA256
+        du webhook actif. Pattern Stripe : nouveau secret au format
+        `whsec_<43 chars base64url>`, visible **une seule fois** dans la
+        réponse. L'ancien secret ne signe plus aucun event dès le retour
+        200 (le dispatcher relit `webhook.secret` à chaque POST).
+
+        Préféré au legacy `DELETE + POST` : sans indisponibilité entre
+        les 2 appels, préserve l'URL, pas de 409 à gérer.
+
+        `404 webhook_not_configured` si aucun webhook actif. Rate-limit
+        **5/min** (aligné sur `POST /v1/me/api-keys`).
+      responses:
+        "200":
+          description: Nouveau secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookSecretRotated" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: |
+            Aucun webhook actif à rotate (`webhook_not_configured`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  # -------------------------------------------------------------------------
+  # Merchants
+  # -------------------------------------------------------------------------
+  /v1/merchants:
+    get:
+      operationId: listMerchants
+      summary: Lister les merchants
+      tags: [Merchants]
+      x-status: planned
+      description: "Disponible après M4."
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Page paginée.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MerchantList" }
+    post:
+      operationId: createMerchant
+      summary: Créer un merchant
+      tags: [Merchants]
+      x-status: planned
+      description: "Disponible après M4."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MerchantCreateInput" }
+      responses:
+        "201":
+          description: Merchant créé.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Merchant" }
+
+  /v1/merchants/{id}:
+    patch:
+      operationId: updateMerchant
+      summary: Mettre à jour un merchant
+      tags: [Merchants]
+      x-status: planned
+      description: "Disponible après M4."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MerchantPatchInput" }
+      responses:
+        "200":
+          description: Merchant mis à jour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Merchant" }
+
+  # -------------------------------------------------------------------------
+  # Internal — Meta webhooks (NON destinés aux resellers)
+  # -------------------------------------------------------------------------
+  /webhooks/whatsapp:
+    get:
+      operationId: verifyWhatsappWebhook
+      summary: Challenge de vérification Meta
+      tags: [Internal]
+      x-status: live
+      security: []
+      description: |
+        Endpoint appelé **uniquement par Meta** lors de la configuration
+        du webhook (GET avec `hub.mode=subscribe` + `hub.verify_token`).
+
+        **Ne pas appeler côté reseller** — documenté ici pour transparence
+        opérationnelle uniquement.
+      parameters:
+        - in: query
+          name: hub.mode
+          required: true
+          schema: { type: string, enum: [subscribe] }
+        - in: query
+          name: hub.verify_token
+          required: true
+          schema: { type: string }
+        - in: query
+          name: hub.challenge
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Challenge renvoyé en texte brut.
+          content:
+            text/plain:
+              schema: { type: string }
+        "403":
+          description: Verify token invalide.
+    post:
+      operationId: receiveWhatsappWebhook
+      summary: Réception des events Meta WhatsApp
+      tags: [Internal]
+      x-status: live
+      security: []
+      description: |
+        Endpoint appelé **uniquement par Meta** pour livrer les events
+        d'appels WhatsApp (ringing, accepted, terminate, permission
+        reply). Signature obligatoire via `X-Hub-Signature-256` (HMAC
+        SHA-256 avec `WHATSAPP_APP_SECRET`).
+
+        **Fail-closed** depuis M1 : 503 si le secret n'est pas configuré
+        côté serveur. Format d'erreur legacy `application/json
+        {"detail": "..."}` — **pas** RFC 7807 (préserve la compat Meta).
+
+        **Ne pas appeler côté reseller**.
+      parameters:
+        - in: header
+          name: X-Hub-Signature-256
+          required: true
+          schema: { type: string, example: "sha256=<hex>" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Payload Meta brut (object=whatsapp_business_account).
+      responses:
+        "200":
+          description: Ack Meta.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        "400":
+          description: JSON invalide.
+        "403":
+          description: Signature HMAC invalide.
+        "413":
+          description: |
+            Body > 256 KiB (#P0-6). Anti-DoS appliqué AVANT vérification
+            HMAC pour économiser le calcul SHA-256 sur payloads suspects.
+            Format `application/problem+json` (slug `payload_too_large`)
+            — exception au format legacy de cet endpoint, sans impact
+            Meta qui ne lit jamais le body de réponse.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: Serveur mal configuré (`WHATSAPP_APP_SECRET` absent).
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: yk_... (38 chars)
+      description: |
+        Clé API au format `yk_...`. Fournie manuellement par l'équipe
+        Yasmine (bootstrap). Self-service `POST /v1/me/api-keys` à venir
+        en M4.
+  parameters:
+    RequestIdHeader:
+      in: header
+      name: X-Request-ID
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: |
+        UUID v4 que vous souhaitez attribuer à cette requête (P1-5).
+
+        - Si présent et format UUID v4 strict valide (RFC 4122) : Yasmine
+          le respecte et le retourne tel quel en header response.
+        - Si absent, vide, ou format invalide : Yasmine en génère un
+          nouveau (rejet sécurisé contre la log injection / path traversal).
+
+        Toutes les responses incluent ce header. Les erreurs RFC 7807
+        incluent le même `request_id` dans le body. Joignez-le à tout
+        ticket support pour tracer une requête côté serveur.
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+      description: |
+        Clé d'idempotence **obligatoire** (P0-1). Format libre, 1-255
+        chars (UUID v4 recommandé). Scope par reseller, TTL 24 h.
+
+        - **Replay** (même clé + même body) → la réponse stockée est
+          rejouée bit-for-bit avec `X-Idempotent-Replay: true`. Aucun
+          nouvel appel, aucun nouveau débit.
+        - **Conflit** (même clé + body différent) → `409
+          idempotency_key_conflict`. Générer une nouvelle clé pour une
+          requête différente.
+        - **Header absent / vide / > 255 chars** → `400` avec slug
+          `missing_idempotency_key` / `idempotency_key_empty` /
+          `idempotency_key_too_long`.
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      in: query
+      name: cursor
+      schema: { type: string }
+      description: Opaque. Fourni par `next_cursor` de la page précédente.
+    Sort:
+      in: query
+      name: sort
+      schema: { type: string, default: "-created_at" }
+      description: Champ + signe. `-` pour DESC. Défaut `-created_at`.
+    CallId:
+      in: path
+      name: id
+      required: true
+      # P0-2 : on accepte n'importe quelle string en path. Un UUID
+      # syntaxiquement invalide est traite cote serveur comme 404
+      # `call_not_found` (pas 422), pour homogeneiser l'anti-enum.
+      schema: { type: string }
+  responses:
+    Unauthorized:
+      description: Clé API absente, invalide ou révoquée.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    CallNotFound:
+      description: |
+        Appel introuvable. **Body byte-identique** sur les 3 cas
+        possibles (UUID invalide / inconnu / autre tenant) — anti-énum.
+        Slug stable `call_not_found`.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example:
+            type: https://docs.yasmine.akidly.com/errors/call_not_found
+            title: Not Found
+            status: 404
+            detail: Aucun appel trouve pour cet identifiant.
+            instance: /v1/calls/00000000-0000-0000-0000-000000000000
+            request_id: a1b2c3d4
+    NotFound:
+      description: Ressource introuvable ou non accessible au reseller courant.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ValidationError:
+      description: Payload mal formé — détails dans `errors[]`.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        loc: { type: array, items: { type: string } }
+                        msg: { type: string }
+                        type: { type: string }
+    IdempotencyKeyError:
+      description: |
+        Header `Idempotency-Key` invalide. Trois slugs possibles :
+        `missing_idempotency_key` (absent), `idempotency_key_empty`
+        (chaîne vide), `idempotency_key_too_long` (> 255 chars).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          examples:
+            missing:
+              summary: Header absent
+              value:
+                type: https://docs.yasmine.akidly.com/errors/missing_idempotency_key
+                title: Bad Request
+                status: 400
+                detail: Le header Idempotency-Key est obligatoire sur POST /v1/calls.
+                instance: /v1/calls
+                request_id: a1b2c3d4
+            empty:
+              summary: Header vide
+              value:
+                type: https://docs.yasmine.akidly.com/errors/idempotency_key_empty
+                title: Bad Request
+                status: 400
+                detail: Idempotency-Key ne peut pas etre vide.
+                instance: /v1/calls
+                request_id: a1b2c3d4
+            too_long:
+              summary: Header > 255 chars
+              value:
+                type: https://docs.yasmine.akidly.com/errors/idempotency_key_too_long
+                title: Bad Request
+                status: 400
+                detail: "Idempotency-Key ne peut pas depasser 255 caracteres (recu : 312)."
+                instance: /v1/calls
+                request_id: a1b2c3d4
+    IdempotencyKeyConflict:
+      description: |
+        Idempotency-Key déjà utilisée avec un body différent. Générer
+        une nouvelle clé pour une requête différente.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example:
+            type: https://docs.yasmine.akidly.com/errors/idempotency_key_conflict
+            title: Conflict
+            status: 409
+            detail: Idempotency-Key 'order-cmd-2026-789' a deja ete utilisee avec un body different.
+            instance: /v1/calls
+            request_id: a1b2c3d4
+    InsufficientBalance:
+      description: Solde insuffisant pour déclencher l'appel.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - type: object
+                properties:
+                  balance_seconds: { type: integer }
+                  required_seconds: { type: integer }
+    RateLimited:
+      description: |
+        Rate-limit par clé API dépassé (M3.6 C7). Slug
+        `rate_limit_exceeded`. Respecter `Retry-After` (secondes) avant
+        de retenter.
+      headers:
+        Retry-After:
+          description: Secondes avant le prochain reset du bucket.
+          schema: { type: integer }
+        X-RateLimit-Limit:
+          description: Plafond appliqué à cet endpoint (requêtes par minute).
+          schema: { type: integer }
+        X-RateLimit-Remaining:
+          description: Compteur restant dans la fenêtre courante. Vaut `0` sur 429.
+          schema: { type: integer }
+        X-RateLimit-Reset:
+          description: Timestamp Unix du prochain reset.
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - type: object
+                properties:
+                  retry_after:
+                    type: integer
+                    description: Secondes avant le prochain reset (identique au header).
+  schemas:
+    # -----------------------------------------------------------------------
+    # Problem (RFC 7807)
+    # -----------------------------------------------------------------------
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://docs.yasmine.akidly.com/errors/invalid_api_key
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        request_id:
+          type: string
+          example: a1b2c3d4
+          description: 8 chars hex. À inclure dans tout ticket support.
+    # -----------------------------------------------------------------------
+    # Pagination
+    # -----------------------------------------------------------------------
+    Page:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: {}
+        has_more: { type: boolean }
+        next_cursor: { type: string, nullable: true }
+    # -----------------------------------------------------------------------
+    # CallCreate / CallOut (M3.3 live) — source de vérité = api/v1/schemas.py
+    # -----------------------------------------------------------------------
+    CallCreate:
+      type: object
+      required: [phone_number, merchant_ref, customer_name, purpose, amount, currency]
+      additionalProperties: false
+      properties:
+        phone_number:
+          type: string
+          description: |
+            Numéro client au format E.164 (ex. `+212612345678`). Validé
+            par libphonenumber (`is_valid_number`) et renormalisé en
+            E.164 canonique avant traitement. Les espaces et séparateurs
+            sont tolérés en entrée mais supprimés.
+          examples: ["+212612345678"]
+        merchant_ref:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^[a-zA-Z0-9_.-]+$"
+          description: |
+            Slug stable identifiant la boutique côté reseller. Utilisé
+            pour l'upsert merchant. Caractères autorisés : `[a-zA-Z0-9_.-]`.
+          examples: ["boutique-paris-01"]
+        customer_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            Nom du client. Strip automatique des espaces en début/fin,
+            rejet des caractères de contrôle ASCII, normalisation
+            Unicode NFC.
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Libellé métier libre décrivant l'intention de l'appel.
+            Stocké dans `calls.metadata.purpose_hint` côté serveur.
+          examples: [confirmation, relance_paiement, livraison, annulation]
+        amount:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]+)?$"
+          description: |
+            Montant en devise indiquée, sérialisé en string pour
+            préserver la précision décimale. Contrainte serveur :
+            `0 < amount <= 1000000`.
+          examples: ["249.00"]
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: |
+            Code ISO-4217 sur 3 lettres majuscules (format seul, pas de
+            validation contre la liste des devises réelles).
+          examples: [MAD, EUR, USD]
+        country:
+          type: string
+          enum: [MA, DZ, TN, FR]
+          default: MA
+          description: |
+            Code pays ISO 3166-1 alpha-2 du client à appeler. Détermine
+            la langue et le contexte culturel utilisés par l'IA. Les
+            variantes de prompt internes sont choisies côté serveur —
+            transparent pour le reseller.
+          examples: [MA]
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: |
+            Metadata libre du reseller (propagé dans
+            `calls.metadata.reseller_metadata`). Limite : 2 KB
+            sérialisé JSON compact.
+    CallOut:
+      type: object
+      required: [id, status, request_status, call_status, created_at, merchant_id, customer_phone_masked]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [queued, dialing, ringing, in_progress, ended, failed]
+          description: |
+            Statut legacy dérivé des rails `request_status` + `call_status`
+            (colonne PostgreSQL GENERATED STORED). Lecture seule — conservé
+            pour compat M3.0–M3.5.
+        request_status:
+          type: string
+          enum:
+            - queued
+            - waiting_user_permission
+            - permission_accepted
+            - permission_refused
+            - permission_expired
+            - quota_blocked
+            - cancelled_by_reseller
+            - ready_to_dial
+            - done
+          description: |
+            Rail DEMANDE côté Yasmine (M3.6 C2). Cycle nominal :
+            `queued → waiting_user_permission → permission_accepted →
+            ready_to_dial → done`. Terminaux échec : `permission_refused`,
+            `permission_expired`, `quota_blocked`, `cancelled_by_reseller`.
+
+            **M3.6 C4** — `quota_blocked` couvre 3 cas de quotas Meta guards
+            proactifs (cf `doc/whatsapp.md §4.2-§4.3`) :
+            - `templates_quota_24h` : 1 call_permission_request déjà envoyé dans les 24 h glissantes.
+            - `templates_quota_7d` : 2 déjà envoyés dans les 7 j glissants.
+            - `auto_revoke_imminent_no_answer_streak_4` : 4 NO_ANSWER consécutifs → Meta considère la permission auto-révoquée.
+            Le diagnostic exact est persisté dans `calls.failure_reason`
+            sous la forme `quota:<reason>`. Non exposé dans la réponse 201
+            initial (transition asynchrone via background task).
+        call_status:
+          type: string
+          enum: [not_started, dialing, ringing, connected, ended, failed, cancelled]
+          description: |
+            Rail APPEL côté téléphonie (M3.6 C2). Pilotée par les webhooks
+            Meta une fois `request_status = ready_to_dial`. Cycle :
+            `not_started → dialing → ringing → connected → ended`.
+            Terminaux échec : `failed`, `cancelled` (M3.6 C8 — via POST
+            `/v1/calls/{id}/cancel`).
+        created_at: { type: string, format: date-time }
+        merchant_id:
+          type: string
+          format: uuid
+          description: ID du merchant upserté depuis `merchant_ref`.
+        customer_phone_masked:
+          type: string
+          description: |
+            Numéro masqué pour les logs / UI (ex. `+212 6** *** *78`).
+            Le numéro brut n'est **jamais** retourné dans les réponses
+            API — disponible uniquement côté ops pour investigation.
+          examples: ["+212 6** *** *78"]
+        purpose:
+          type: string
+          nullable: true
+        amount:
+          type: string
+          nullable: true
+          examples: ["249.00"]
+        currency:
+          type: string
+          nullable: true
+          pattern: "^[A-Z]{3}$"
+          examples: [MAD]
+        country:
+          type: string
+          nullable: true
+          enum: [MA, DZ, TN, FR, null]
+          description: Code ISO echoed du reseller — jamais la variante de prompt interne.
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+        # P0-2 — champs cycle de vie + terminal. Tous nullable : `null`
+        # tant que l'etape n'est pas atteinte.
+        ringing_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Horodatage `ringing` (sonnerie cote client).
+        connected_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Horodatage `connected` (client a decroche). Origine DB `accepted_at`.
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Horodatage de fin (terminal naturel ou cancel). `null` tant
+            que l'appel n'est pas en etat `ended`/`failed`/`cancelled`.
+        billed_seconds:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: |
+            Secondes facturees (`max(duration_s, 10)`). `null` tant que
+            l'appel n'est pas finalise.
+        failure_reason:
+          type: string
+          nullable: true
+          description: |
+            Slug machine-readable de la raison d'echec si applicable.
+            Exemples : `quota:templates_24h_limit`, `permission_refused`,
+            `technical_failure`, `reclaim_after_restart`.
+        cancelled_state:
+          type: string
+          nullable: true
+          enum: [not_started, dialing, ringing, connected, ended, failed, cancelled, null]
+          description: |
+            Si l'appel a ete annule par le reseller (`POST /v1/calls/{id}/cancel`),
+            etat du rail APPEL au moment du cancel. Origine DB
+            `calls.metadata.cancelled_state`.
+    BalanceOut:
+      type: object
+      required: [balance_seconds, updated_at]
+      additionalProperties: false
+      properties:
+        balance_seconds:
+          type: integer
+          description: |
+            Solde en secondes facturables. Peut etre negatif jusqu'a
+            `-MAX_OVERDRAFT_SECONDS` (default -300 s) sur burst concurrent.
+          examples: [3600]
+        currency:
+          type: string
+          nullable: true
+          description: |
+            Code ISO 4217 si la facturation est en monnaie. `null`
+            aujourd'hui (balance en secondes pures).
+        updated_at:
+          type: string
+          format: date-time
+          description: |
+            Horodatage du dernier mouvement ledger (`MAX(credit_transactions.
+            created_at)`) ou `created_at` du reseller en fallback.
+    CallCancelOut:
+      type: object
+      required: [id, status, cancelled_state, billed_seconds, cancelled_at]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [cancelled, ended, failed]
+          description: |
+            `cancelled` si le cancel a eu effet. `ended`/`failed`/`cancelled`
+            préexistant si l'appel était déjà terminal (idempotence).
+        cancelled_state:
+          type: string
+          enum: [not_started, dialing, ringing, connected, ended, failed, cancelled]
+          description: |
+            `call_status` au moment où Yasmine a traité le cancel. Utile
+            pour diagnostic : indique à quel stade du flow l'annulation
+            a été reçue. Sur réponse idempotente, reflète l'état courant.
+        billed_seconds:
+          type: integer
+          minimum: 0
+          description: |
+            Secondes facturées. 0 si annulé avant `connected`.
+            Sinon `ceil(now - accepted_at)` avec plancher minimum 10 s.
+        cancelled_at: { type: string, format: date-time }
+    CallList:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/CallOut" }
+    PaginatedCalls:
+      type: object
+      required: [data, has_more]
+      additionalProperties: false
+      description: |
+        Enveloppe paginée `GET /v1/calls` (P1-3). `next_cursor` est un
+        curseur opaque signé HMAC-SHA256 (TTL 24 h) à passer tel quel au
+        `?cursor=` de la requête suivante. `null` = dernière page.
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/CallOut" }
+        next_cursor:
+          type: string
+          nullable: true
+          description: Cursor pour la page suivante. `null` si dernière page.
+        has_more:
+          type: boolean
+          description: |
+            Redondant avec `next_cursor is not null` — exposé pour
+            simplifier le code client (pas besoin de comparer à `null`).
+    CallEvent:
+      type: object
+      properties:
+        event_type: { type: string }
+        source: { type: string, enum: [provider, agent, system] }
+        occurred_at: { type: string, format: date-time }
+        data: { type: object, additionalProperties: true }
+    CallEventList:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/CallEvent" }
+    Transcript:
+      type: object
+      properties:
+        call_id: { type: string, format: uuid }
+        transcript: { type: string, nullable: true }
+        turns:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              role: { type: string, enum: [agent, customer] }
+              text: { type: string }
+              t_start_ms: { type: integer }
+              t_end_ms: { type: integer }
+        agent_summary: { type: string, nullable: true }
+        client_sentiment: { type: string, nullable: true }
+        confirmed_items: { type: object, nullable: true }
+    # -----------------------------------------------------------------------
+    # Account (planned)
+    # -----------------------------------------------------------------------
+    Reseller:
+      type: object
+      description: |
+        Legacy schema — conservé pour compat usage interne. Le contrat
+        public `GET /v1/me` retourne `MeOut` (P1-1, 5 champs, anti-BOPLA).
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        contact_email: { type: string, format: email, nullable: true }
+        status: { type: string, enum: [active, suspended, closed] }
+        created_at: { type: string, format: date-time }
+    MeOut:
+      type: object
+      description: |
+        Réponse `GET /v1/me` (P1-1). Anti-BOPLA : ni `balance_seconds`
+        (voir `/v1/me/balance`), ni `status`, ni aucun compteur interne.
+      required: [reseller_id, name, created_at, rate_limit_per_minute]
+      additionalProperties: false
+      properties:
+        reseller_id: { type: string, format: uuid }
+        name: { type: string }
+        email:
+          type: string
+          nullable: true
+          description: |
+            Email de contact. Col DB `resellers.contact_email` nullable :
+            `null` si non renseigné à la création.
+        created_at: { type: string, format: date-time }
+        rate_limit_per_minute:
+          type: integer
+          description: |
+            Plafond requêtes/min sur `/v1/*` (valeur globale serveur,
+            pas par-reseller aujourd'hui).
+          example: 600
+    TransactionOut:
+      type: object
+      description: |
+        Ligne ledger publique (`GET /v1/me/transactions`, P1-1).
+      required: [transaction_id, type, seconds, created_at]
+      additionalProperties: false
+      properties:
+        transaction_id:
+          type: integer
+          format: int64
+          description: ID interne BigInteger — stable + ordonné.
+        type:
+          type: string
+          enum: [topup, debit_call, refund, adjustment]
+        seconds:
+          type: integer
+          description: |
+            Mouvement signé : positif = crédit (topup/refund),
+            négatif = débit (debit_call).
+        reference:
+          type: string
+          nullable: true
+          description: |
+            Référence externe. Pour `debit_call` : `call_id` UUID.
+            Libre pour autres types.
+        reason:
+          type: string
+          nullable: true
+          description: Description libre (motif ops du mouvement).
+        created_at: { type: string, format: date-time }
+    PaginatedTransactions:
+      type: object
+      description: Enveloppe paginée `GET /v1/me/transactions` (P1-1).
+      required: [data, has_more]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/TransactionOut" }
+        next_cursor:
+          type: string
+          nullable: true
+          description: Cursor opaque pour la page suivante, `null` si dernière.
+        has_more: { type: boolean }
+    UsageStatusBreakdown:
+      type: object
+      description: |
+        Ventilation par `call_status`. Distingue `cancelled` (cancel
+        reseller) de `failed` (échec technique). In-flight non comptés.
+      required: [completed_calls, completed_seconds, failed_calls, cancelled_calls]
+      additionalProperties: false
+      properties:
+        completed_calls:
+          type: integer
+          description: Calls `call_status = 'ended'`.
+        completed_seconds:
+          type: integer
+          description: |
+            Somme `billable_s` des completed. Base de facturation
+            effective du mois.
+        failed_calls:
+          type: integer
+          description: Calls `call_status = 'failed'` (échecs techniques).
+        cancelled_calls:
+          type: integer
+          description: |
+            Calls `call_status = 'cancelled'` (cancel reseller via
+            `POST /v1/calls/{id}/cancel`).
+    WebhookTestOut:
+      type: object
+      description: Réponse `POST /v1/me/webhooks/test` (P1-2).
+      required: [test_id, delivered, latency_ms, target_url, attempted_at]
+      additionalProperties: false
+      properties:
+        test_id:
+          type: string
+          format: uuid
+          description: |
+            Identifiant unique du test. Permet de retracer la row
+            associée dans `GET /v1/me/webhooks/deliveries`.
+        delivered: { type: boolean }
+        http_status:
+          type: integer
+          nullable: true
+          description: Code HTTP reçu. `null` si timeout / erreur réseau.
+        latency_ms:
+          type: integer
+          description: Durée wall-clock du POST en millisecondes.
+        target_url: { type: string }
+        attempted_at: { type: string, format: date-time }
+        error_message:
+          type: string
+          nullable: true
+          description: Extrait tronqué à 200 chars si échec.
+    DeliveryOut:
+      type: object
+      description: Ligne d'historique webhook publique (P1-2). Anti-BOPLA.
+      required: [delivery_id, event_type, attempt_count, status, created_at, last_attempted_at]
+      additionalProperties: false
+      properties:
+        delivery_id:
+          type: integer
+          format: int64
+          description: ID interne BigInt — stable + ordonné.
+        event_type:
+          type: string
+          description: |
+            Ex: `call.ended`, `call.cancelled`, `webhook.test`. Non enum
+            côté API — évolue au fil des events livrés.
+        target_url:
+          type: string
+          nullable: true
+          description: |
+            URL au moment du POST. `null` sur rows pré-P1-2.
+        http_status: { type: integer, nullable: true }
+        latency_ms:
+          type: integer
+          nullable: true
+          description: Durée wall-clock en ms. `null` sur rows pré-P1-2.
+        attempt_count:
+          type: integer
+          description: |
+            N° de tentative (1-3, retry 0s/30s/5min côté dispatcher).
+            Plusieurs rows peuvent partager le même event_id si retry.
+        status:
+          type: string
+          enum: [delivered, failed, pending]
+          description: Computed depuis `delivered_at`/`error`.
+        next_retry_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at: { type: string, format: date-time }
+        last_attempted_at: { type: string, format: date-time }
+        error_message:
+          type: string
+          nullable: true
+          description: Extrait tronqué à 200 chars si échec.
+    PaginatedDeliveries:
+      type: object
+      description: Enveloppe paginée `GET /v1/me/webhooks/deliveries` (P1-2).
+      required: [data, has_more]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/DeliveryOut" }
+        next_cursor:
+          type: string
+          nullable: true
+        has_more: { type: boolean }
+    UsageOut:
+      type: object
+      description: |
+        Réponse `GET /v1/me/usage` (P1-1). Fenêtre semi-open
+        `[period_start, period_end)` sur `calls.created_at`. Période
+        sans appel = 200 avec zéros (pas 404).
+      required: [period, period_start, period_end, total_calls, total_seconds, breakdown]
+      additionalProperties: false
+      properties:
+        period:
+          type: string
+          pattern: "^\\d{4}-(0[1-9]|1[0-2])$"
+          example: "2026-04"
+        period_start: { type: string, format: date-time }
+        period_end:
+          type: string
+          format: date-time
+          description: Premier instant du mois suivant (exclu).
+        total_calls: { type: integer }
+        total_seconds:
+          type: integer
+          description: |
+            Somme `billable_s` de TOUS les calls du mois (incl.
+            in-flight). Pour facturation réelle voir
+            `breakdown.completed_seconds`.
+        breakdown:
+          $ref: "#/components/schemas/UsageStatusBreakdown"
+    Balance:
+      type: object
+      properties:
+        balance_seconds: { type: integer }
+        balance_human: { type: string, example: 10h00m }
+        as_of: { type: string, format: date-time }
+    Transaction:
+      type: object
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [topup, debit_call, refund, adjustment] }
+        seconds: { type: integer, description: "Positif (topup/refund) ou négatif (debit)." }
+        reference: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    TransactionList:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/Transaction" }
+    UsagePeriod:
+      type: object
+      properties:
+        period: { type: string, example: "2026-04" }
+        calls_total: { type: integer }
+        calls_by_result:
+          type: object
+          additionalProperties: { type: integer }
+        billable_seconds: { type: integer }
+        cost_usd: { type: string }
+    ApiKey:
+      type: object
+      description: |
+        Legacy — conservé pour compat. Le contrat public P1-4 utilise
+        `ApiKeyOut` (retourné par `GET /v1/me/api-keys`).
+      properties:
+        id: { type: string }
+        prefix: { type: string, example: yk_abc123... }
+        label: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+    ApiKeyList:
+      type: object
+      description: Legacy — utiliser `ApiKeyListOut`.
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKey" }
+    ApiKeyCreated:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+              description: Legacy — utiliser `ApiKeyCreatedOut.secret_key`.
+    ApiKeyCreateIn:
+      type: object
+      description: Body `POST /v1/me/api-keys` (P1-4). `extra="forbid"`.
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          nullable: true
+          maxLength: 64
+          description: |
+            Description libre pour identifier la clé côté UI/logs
+            (ex: `ci-prod`, `shopify-staging`). Optionnel.
+    ApiKeyOut:
+      type: object
+      description: |
+        Shape commune GET / DELETE clé API (P1-4). **Anti-BOPLA** :
+        jamais de `key_hash`, jamais de `secret_key` — seul le
+        `key_prefix` (12 chars) est exposé.
+      required: [id, key_prefix, created_at, status]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        key_prefix:
+          type: string
+          description: |
+            12 premiers chars de la clé en clair. Suffisant pour
+            identifier côté UI, insuffisant pour forger.
+          example: "yk_Xa7bC3dE5f"
+        label:
+          type: string
+          nullable: true
+          maxLength: 64
+        created_at: { type: string, format: date-time }
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Dernière utilisation de la clé (posée par
+            `touch_used()` à chaque auth réussie).
+        last_used_ip:
+          type: string
+          nullable: true
+          description: |
+            Dernière IP client vue au moment de l'auth (format INET :
+            IPv4 ou IPv6).
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [active, revoked]
+          description: |
+            Computed côté serveur depuis `revoked_at` : `active` si
+            NULL, `revoked` sinon.
+    ApiKeyListOut:
+      type: object
+      description: Réponse `GET /v1/me/api-keys` (P1-4).
+      required: [data]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKeyOut" }
+    ApiKeyCreatedOut:
+      type: object
+      description: |
+        Réponse `POST /v1/me/api-keys` (P1-4). `secret_key` **visible
+        une seule fois** — à stocker immédiatement côté reseller.
+      required: [id, key_prefix, created_at, secret_key]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        key_prefix: { type: string, example: "yk_Xa7bC3dE5f" }
+        label: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        secret_key:
+          type: string
+          description: |
+            Clé en clair (`yk_<40 chars base62>`) — **visible 1 seule
+            fois**. Aucune autre route ne la re-expose. Perte =
+            révocation + nouvelle création obligatoire.
+    ApiKeyEventOut:
+      type: object
+      description: |
+        Un event du journal d'audit d'une clé API (P1-6). `api_key_id`
+        et `reseller_id` ne sont **pas** exposés (redondants avec
+        l'URL et le scope tenant).
+      required: [id, event_type, created_at]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        event_type:
+          type: string
+          enum: [created, revoked, rate_limited]
+          description: |
+            Type d'événement. La liste peut être étendue dans une future
+            version (ex: `used_from_new_ip`) — côté reseller, traiter
+            un `event_type` inconnu comme information sans bloquer.
+        ip:
+          type: string
+          nullable: true
+          description: IP source (INET). Null si non capturée.
+        user_agent: { type: string, nullable: true }
+        metadata:
+          type: object
+          nullable: true
+          description: |
+            Metadata libre selon le type d'event :
+            - `created` → `{"label": "<label>"}` si un label a été fourni.
+            - `rate_limited` → `{"path": "/v1/...", "limit": "<N> per <unit>"}`.
+            - `revoked` → `null`.
+        created_at: { type: string, format: date-time }
+    ApiKeyEventListOut:
+      type: object
+      description: |
+        Enveloppe `GET /v1/me/api-keys/{id}/events` (P1-6) — curseur
+        forward-only HMAC, TTL 24 h.
+      required: [data, next_cursor, has_more]
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKeyEventOut" }
+        next_cursor:
+          type: string
+          nullable: true
+          description: Curseur opaque à passer pour la page suivante.
+        has_more: { type: boolean }
+    WebhookCreateInput:
+      type: object
+      required: [url]
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          format: uri
+          description: |
+            URL HTTPS publique où Yasmine enverra les events. Doit accepter
+            `POST application/json` et répondre `2xx` sous 10 s.
+          example: "https://monshop.com/yasmine-webhooks"
+    WebhookCreated:
+      type: object
+      required: [url, secret, created_at]
+      additionalProperties: false
+      properties:
+        url: { type: string, format: uri }
+        secret:
+          type: string
+          description: |
+            Secret HMAC-SHA256 base64url (256 bits d'entropie). **Affiché
+            une seule fois** — à stocker immédiatement côté reseller.
+            Depuis P1-8, format `whsec_<43 chars>`. Les secrets legacy
+            pré-P1-8 (sans préfixe) restent fonctionnels — la vérification
+            HMAC est prefix-agnostique.
+          example: "whsec_tAunISmhee9BvK-PpHE5GfXZp_0WnMJwZB6SRbZUpng"
+        created_at: { type: string, format: date-time }
+    WebhookGet:
+      type: object
+      required: [url, secret_prefix, active, created_at]
+      additionalProperties: false
+      properties:
+        url: { type: string, format: uri }
+        secret_prefix:
+          type: string
+          description: |
+            12 premiers caractères du secret + `…`. Le secret complet
+            n'est jamais renvoyé. Pour les nouveaux secrets format
+            `whsec_`, affiche `whsec_xxxxxx…` (6 chars utiles après le
+            préfixe repère). Pour les secrets legacy, 12 chars bruts.
+          example: "whsec_tAunIS…"
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+    WebhookSecretRotated:
+      type: object
+      description: |
+        Réponse `POST /v1/me/webhooks/rotate-secret` (P1-8). Pattern
+        Stripe — `secret` visible une seule fois.
+      required: [secret, secret_prefix, rotated_at]
+      additionalProperties: false
+      properties:
+        secret:
+          type: string
+          description: |
+            Nouveau secret HMAC `whsec_<43 chars>`. **Affiché une seule
+            fois**. L'ancien secret ne signe plus aucun event dès le
+            retour 200.
+          example: "whsec_tAunISmhee9BvK-PpHE5GfXZp_0WnMJwZB6SRbZUpng"
+        secret_prefix:
+          type: string
+          description: 12 premiers chars + `…`, écho permanent via `GET /v1/me/webhooks`.
+          example: "whsec_tAunIS…"
+        rotated_at: { type: string, format: date-time }
+    WebhookUrlRejectedProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          properties:
+            reason:
+              type: string
+              enum:
+                - invalid_url
+                - scheme_not_allowed
+                - localhost_rejected
+                - dns_resolution_failed
+                - private_ip_rejected
+    WebhookDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        event_id: { type: string }
+        event_type: { type: string }
+        status: { type: string, enum: [pending, delivered, failed, dropped] }
+        attempts: { type: integer }
+        last_http_code: { type: integer, nullable: true }
+        last_error: { type: string, nullable: true }
+        next_attempt_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    WebhookDeliveryList:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/WebhookDelivery" }
+    # -----------------------------------------------------------------------
+    # Merchants (planned)
+    # -----------------------------------------------------------------------
+    MerchantCreateInput:
+      type: object
+      required: [external_ref, name]
+      additionalProperties: false
+      properties:
+        external_ref: { type: string }
+        name: { type: string }
+        country: { type: string, enum: [MA, DZ, TN, FR] }
+        default_language: { type: string, enum: [ar, fr, en] }
+        timezone: { type: string, example: Africa/Casablanca }
+        contact_email: { type: string, format: email }
+        contact_phone_e164: { type: string }
+        contact_whatsapp_e164: { type: string }
+        website_url: { type: string, format: uri }
+        address: { type: string }
+    MerchantPatchInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        country: { type: string, enum: [MA, DZ, TN, FR] }
+        default_language: { type: string }
+        timezone: { type: string }
+        contact_email: { type: string, format: email }
+        contact_phone_e164: { type: string }
+        contact_whatsapp_e164: { type: string }
+        website_url: { type: string, format: uri }
+        address: { type: string }
+    Merchant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        external_ref: { type: string }
+        name: { type: string }
+        country: { type: string, enum: [MA, DZ, TN, FR], nullable: true }
+        default_language: { type: string, nullable: true }
+        timezone: { type: string, nullable: true }
+        contact_email: { type: string, format: email, nullable: true }
+        contact_phone_e164: { type: string, nullable: true }
+        contact_whatsapp_e164: { type: string, nullable: true }
+        website_url: { type: string, format: uri, nullable: true }
+        address: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    MerchantList:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/Merchant" }

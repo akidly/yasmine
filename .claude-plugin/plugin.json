@@ -1,6 +1,8 @@
 {
   "name": "yasmine",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Yasmine voice AI API — automated outbound call confirmations for reseller workflows (MA/DZ/TN/FR).",
-  "author": {"name": "Akidly"}
+  "author": {
+    "name": "Akidly"
+  }
 }
