@@ -71,8 +71,8 @@ paths:
       tags: [Calls]
       x-status: live
       description: |
-        Crée un appel IA sortant. Le canal (WhatsApp, GSM, Asterisk) est
-        choisi côté Yasmine via la configuration serveur — transparent
+        Crée un appel IA sortant. Le canal de délivrance (WhatsApp, GSM)
+        est choisi côté Yasmine via la configuration serveur — transparent
         pour le reseller.
 
         **Idempotency-Key obligatoire** (P0-1) : header `Idempotency-Key`

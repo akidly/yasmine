@@ -175,7 +175,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 - **Décisions simplificatrices tranchées** (cf `plan-p1.md §Décision 2`) : pas de scopes, pas d'`expires_at`, pas de rotation programmée. Seul levier sécurité côté reseller = révocation manuelle.
 
 ### Fixed (P0-3-ter — httpx/httpcore logger silencing)
-- **Logs** (#P0-3-ter) : `httpx` et `httpcore` rabaissés à `WARNING` dans `main.py` et `server_asterisk.py`. Ferme le volet PII P0-3 identifié lors du smoke P0-3-bis : `httpx` loggue au niveau INFO chaque requête avec l'URL complète (query-string inclus), or l'API Meta Graph impose `user_wa_id` en query-string sur `GET /call_permissions` → le numéro fuitait dans `journalctl` via `INFO httpx._client HTTP Request: GET .../?user_wa_id=212...`. Les erreurs réseau (timeouts, connect refused) au niveau WARNING passent toujours. 2 tests ajoutés (setLevel + integration MockTransport). Suite complète 264 passed.
+- **Logs** (#P0-3-ter) : `httpx` et `httpcore` rabaissés à `WARNING` dans les deux points d'entrée applicatifs (API + composant téléphonie sortante). Ferme le volet PII P0-3 identifié lors du smoke P0-3-bis : `httpx` loggue au niveau INFO chaque requête avec l'URL complète (query-string inclus), or l'API Meta Graph impose `user_wa_id` en query-string sur `GET /call_permissions` → le numéro fuitait dans `journalctl` via `INFO httpx._client HTTP Request: GET .../?user_wa_id=212...`. Les erreurs réseau (timeouts, connect refused) au niveau WARNING passent toujours. 2 tests ajoutés (setLevel + integration MockTransport). Suite complète 264 passed.
 
 ### Fixed (P0-3-bis + P1-2-bis — correctifs post-audit)
 - **Dispatcher webhook** (#P1-2-bis) : `target_url`, `latency_ms`, `next_retry_at` renseignés aussi pour les events réels (`call.ended`, `call.failed`, etc.), plus seulement `POST /v1/me/webhooks/test`. Latence mesurée via `time.monotonic()` (pas de saut d'horloge NTP) autour de chaque tentative, y compris sur timeout/connect_error. `next_retry_at` = `now + _BACKOFF_SECONDS[next_idx]` si retry prévu, `None` si succès 2xx ou dernière tentative atteinte. Le cas SSRF-reject garde `target_url=url, latency_ms=None, next_retry_at=None`. 4 tests intégration ajoutés.
@@ -287,7 +287,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
   - **Matrice** : `queued/dialing/ringing` → 200 `billed_seconds=0` (jamais facturé, jamais connecté). `connected` → 200 avec `billed_seconds = max(ceil(now - accepted_at), 10)` et `debit_for_call` immédiat (ledger idempotent, évite double-débit si le webhook `terminate` Meta arrive après). `ended/failed/cancelled` → **200 no-op idempotent**, aucune mutation, **aucun event** ré-émis.
   - **Scoping** : filtre `reseller_id = <caller>` dans la clause SELECT → 404 `call_not_found` si le call appartient à un autre reseller (pas de leak d'existence).
   - **Race-safe** : `pg_advisory_xact_lock(hashtext(call_id))` en tête de transaction + `SELECT ... FOR UPDATE` — protège contre un webhook Meta concurrent qui passerait ringing → connected pile pendant le cancel (même pattern que C5).
-  - **Pipeline cleanup** : nouveau helper `WhatsappWebRTCChannel.cancel_call(call_id)` → cancel la task pipeline (timeout 2s), POST Meta `action=terminate` pour couper la sonnerie, nettoie les 3 dicts internes (`_pipeline_tasks`, `_connections`, `_meta_to_yasmine`). Idempotent.
+  - **Pipeline cleanup** : nouveau helper `cancel_call(call_id)` côté canal WhatsApp Business → cancel la task pipeline (timeout 2s), POST Meta `action=terminate` pour couper la sonnerie, nettoie les 3 dicts internes (`_pipeline_tasks`, `_connections`, `_meta_to_yasmine`). Idempotent.
   - **Event webhook** : `call.cancelled` émis uniquement sur cancel effectif (distinct de `call.ended` — fin naturelle). Payload : `{call_id, cancelled_at, cancelled_state, billed_seconds, merchant_id}`. 11 events au total dans le catalogue.
   - **Enum extension** : `call_status` ajoute `'cancelled'` (migration Alembic `0007_c8_cancel_state.py` — DROP/CREATE `ck_calls_call_status`). `TERMINAL_CALL_STATES` Python inclut désormais `cancelled`. Colonne legacy `status` GENERATED mappe `cancelled` → `'failed'` (sous-type d'échec côté surface M3.0-M3.5 inchangée).
   - **Métadonnées DB** : `calls.metadata.cancelled_state` (snapshot du call_status au moment du cancel), `cancelled_at` (ISO Z), `billed_seconds`.
@@ -337,7 +337,7 @@ Crash mid-retry : les retries via `asyncio.sleep` sont perdus au crash process (
 
 ### Changed (M3.6 C5)
 - `api/routes.py` : inversion d'ordre pour les events `calls[]` — DB d'abord (sous advisory lock), channel side effects (spawn / cancel / cleanup) ensuite. Le channel lit désormais une DB à jour. `statuses[]` et `messages[]` conservent leur ordre historique (hors scope C5).
-- `channels/voice/whatsapp_webrtc.py::handle_webhook_event` branche `accepted` : check anti-double-spawn via `calls_repo.get_status(yasmine_id)` (refuse si `connected`/`ended`). Ancien check RAM `if yasmine_id in self._pipeline_tasks` retiré. Dict `_pipeline_tasks` conservé pour son usage `task.cancel()` au `terminate/reject` (cf audit).
+- Handler webhook côté canal WhatsApp Business, branche `accepted` : check anti-double-spawn via `calls_repo.get_status(yasmine_id)` (refuse si `connected`/`ended`). Ancien check RAM `if yasmine_id in self._pipeline_tasks` retiré. Dict `_pipeline_tasks` conservé pour son usage `task.cancel()` au `terminate/reject` (cf audit).
 
 ### Changed (M3.6 — plafond d'overdraft, C3 reporté)
 - `check_balance` honore désormais `MAX_OVERDRAFT_SECONDS` (default 300 s) : refuse un POST `/v1/calls` si le solde descend sous le plancher. Protection anti-clé volée, n'empêche pas les dérives mineures en concurrence (C3 complet reporté post-M3.6, voir `roadmap.md`).
@@ -347,7 +347,7 @@ Crash mid-retry : les retries via `asyncio.sleep` sont perdus au crash process (
 - **Fix #1** `db/repositories/quotas.py` : CTE streak filtre `WHERE result IS NOT NULL` pour exclure le call en cours (fraîchement créé par POST, `result=NULL`) du `LIMIT 4`. Sans ce filtre, la streak était sous-estimée de 1 (3 observé au lieu de 4 en prod), guard `auto_revoke_imminent_no_answer_streak_4` jamais déclenché à 4 sans 5+ NO_ANSWER. Commit `4fb529f`.
 - **Fix #2** `channels/voice/whatsapp_permission.py::_record_template_send` : SELECT `Call.merchant_id` + INSERT `template_sends` regroupés dans le même `async with session.begin()`. Avant, le SELECT hors begin déclenchait l'autobegin SQLAlchemy 2.0 → `begin()` raisait `A transaction is already begun` → INSERT silencieusement skippé → compteurs `templates_24h/7d` restaient à 0 en prod → guard quota templates fonctionnellement contourné. Commit `4fb529f`.
 - **Fix #3** `api/routes.py::_record_permission_reply` : même pattern que #2. SELECT `TemplateSend.merchant_id, call_id` + `perm_repo.record` + `template_sends_repo.update_status` + `calls_repo.mark_request_status` regroupés dans le même `begin()`. Avant, INSERT `permission_history` + transition `waiting_user_permission → permission_accepted` silencieusement skippés → cascade `InvalidStateTransition` dans `run_origination` → flow accept/refuse via template cassé depuis `bc63503` (C2). Commit `c2ffa72`.
-- **Fix #3-bis** `db/finalize.py::finalize_if_tracked` : même pattern préventif. Canal actif `whatsapp_webrtc` n'utilise pas cette fonction (`finalize_whatsapp.py` en place), bug latent non déclenché en prod. Fix inclus par hygiène anti-whack-a-mole. Commit `c2ffa72`.
+- **Fix #3-bis** `db/finalize.py::finalize_if_tracked` : même pattern préventif. Le canal WhatsApp Business actif n'utilise pas cette fonction (`finalize_whatsapp.py` en place), bug latent non déclenché en prod. Fix inclus par hygiène anti-whack-a-mole. Commit `c2ffa72`.
 - **Fix #4** `api/routes.py` L.122-128 : inversion d'ordre `_record_permission_reply` puis `permission_waiter.deliver`. Avant, la Future résolue débloquait `ensure_call_permission` → `run_origination` poursuivait avec DB stale (transition `permission_accepted` pas encore commitée, ~50 ms d'écart) → `mark_request_status(ready_to_dial)` refusé par matrice. Fix post-#3 : DB commit d'abord, waiter ensuite. Commit `343228a`.
 - **Fix #5** `db/finalize_whatsapp.py::_resolve_result` : discrimine `NO_ANSWER` vs `FAILED` via `call.accepted_at`. Avant, tout call sans `pending_result` LLM mappé en `FAILED` → **aucune** row n'atteignait `result='NO_ANSWER'` en prod → CTE streak toujours 0 → guard 4-NO_ANSWER **dead code en conditions réelles** (fonctionnait uniquement dans les tests avec INSERT artificiels). Règle post-fix : `pending_result=None` + `accepted_at IS NULL` → NO_ANSWER ; `accepted_at NOT NULL` → FAILED + `fallback_reason`. Commit `0d14a21`.
 - Détails complets + 9 scénarios smoke (A/B/C/F/E/D-original/D-replay/D-replay2/G) documentés dans `.claude/context/smoke-history.md` (nouveau fichier, source de vérité sémantique code).
@@ -378,17 +378,17 @@ Crash mid-retry : les retries via `asyncio.sleep` sont perdus au crash process (
 ### Changed (M3.6 C1)
 - `db/call_store.py` supprimé. Le pipeline voice lit désormais son contexte depuis la DB via `db.repositories.calls.fetch_for_pipeline` retournant un `CallPipelineContext`. L'état d'appel n'est plus en RAM process-local : résilient au restart, visible multi-worker. Préalable à C2 (POST async) et C5 (idempotence events webhook).
 - `agent/call_handler.CallHandler` : argument `store` retiré du constructeur. `CallStatus` déplacé dans le même module (ex-`db.call_store`). Méthode `mark_result` simplifiée — paramètre `transcript` retiré, délègue intégralement à `finalize_if_tracked`.
-- `agent/pipelines/run_voice_pipeline` et `run_whatsapp_webrtc_pipeline` : signature `call_request: CallRequest` remplacée par `call_ctx: CallPipelineContext`.
+- Les deux pipelines vocaux (générique + canal WhatsApp Business) : signature `call_request: CallRequest` remplacée par `call_ctx: CallPipelineContext`.
 
 ### Tech-debt (M3.6 C1)
 - `db/repositories/calls.py::fetch_for_pipeline` importe `_COUNTRY_TO_PROMPT_VARIANT` depuis `api/v1/calls.py` (inversion `api → db`, import paresseux pour éviter le cycle). Follow-up : déplacer la constante dans `agent/prompts/country.py` lors d'un refactor ultérieur.
 
 ### Removed (M3.5 — grand ménage code + doc obsolète)
 - `tools/local_relay.py` (relay dev local — référençait les endpoints supprimés en M2).
-- `channels/voice/local_webrtc.py` + branche `local` dans `channels/voice/factory.py` (canal orphelin depuis suppression de `POST /api/offer` en M2).
+- Canal dev local côté navigateur + sa branche dans la factory canaux (orphelin depuis suppression de `POST /api/offer` en M2).
 - `client/index.html` + `client/dev.html` (UI lab consommant `/api/events`, `/api/call/whatsapp`, `/api/calls/{id}` — endpoints morts) + dossier `client/`.
 - `main.py` : `StaticFiles` mount `/client` (plus de fichiers à servir).
-- `docker-compose.dev.yml` : service `pgweb` (dépendait du lab). Le service `asterisk` reste.
+- `docker-compose.dev.yml` : service `pgweb` (dépendait du lab).
 - `.claude/rules/lab-local.md`, `.claude/commands/lab.md`, `.claude/REFACTOR_NOTES.md`.
 - `doc/test_tools.md` (décrivait le lab UI + outils supprimés).
 
