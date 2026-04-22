@@ -8,7 +8,7 @@ Yasmine est une API qui déclenche des **appels vocaux IA sortants** (confirmati
 
 ### Obtenir une clé API
 
-Le self-service (`POST /v1/me/api-keys`) est planifié pour M4. En attendant, **contactez l'équipe** : `cbensassi118@yahoo.fr` en précisant :
+Le self-service (`POST /v1/me/api-keys`) est planifié pour M4. En attendant, **contactez l'équipe** : `contact@akidly.com` en précisant :
 
 - Nom de votre société / projet
 - Volume estimé d'appels par mois
