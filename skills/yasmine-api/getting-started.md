@@ -8,7 +8,7 @@ Yasmine est une API qui déclenche des **appels vocaux IA sortants** (confirmati
 
 ### Obtenir une clé API
 
-Le self-service (`POST /v1/me/api-keys`) est planifié pour M4. En attendant, **contactez l'équipe** : `contact@akidly.com` en précisant :
+**Bootstrap de la 1ère clé** : le self-service `POST /v1/me/api-keys` est live (P1-4) mais il exige une clé existante pour s'authentifier. La 1ère clé se demande donc manuellement — contactez `contact@akidly.com` en précisant :
 
 - Nom de votre société / projet
 - Volume estimé d'appels par mois
@@ -16,8 +16,10 @@ Le self-service (`POST /v1/me/api-keys`) est planifié pour M4. En attendant, **
 
 Vous recevrez :
 
-- Une **clé API** au format `yk_...` (38 caractères après le préfixe). À traiter comme un mot de passe — elle n'est **jamais** retransmise.
+- Une **clé API** au format `yk_...`. À traiter comme un mot de passe — elle n'est **jamais** retransmise.
 - Un **crédit initial** en secondes pour vos tests.
+
+**Ensuite, self-service complet** : dès que vous avez cette 1ère clé en main, vous gérez vous-même vos clés supplémentaires (CI, rotation, backup) via `POST /v1/me/api-keys`, `GET /v1/me/api-keys`, `DELETE /v1/me/api-keys/{key_id}`. Voir `§4.8` ci-dessous et la recette complète dans `docs/examples.md §3.2`.
 
 ### Base URL
 

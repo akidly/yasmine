@@ -9,7 +9,7 @@ MCP plugin pour interagir avec l'API Yasmine (agent vocal IA pour confirmation d
 
 Configurer ensuite le token API dans l'environnement :
 
-    export YASMINE_API_TOKEN="yask_..."
+    export YASMINE_API_TOKEN="yk_..."
 
 ## Contenu
 
