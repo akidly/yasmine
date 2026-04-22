@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
   title: Yasmine API
-  version: 0.1.0
+  version: 1.1.0
   summary: Agent vocal IA pour confirmation de commandes — API reseller.
   description: |
     API Yasmine — déclenche des appels IA sortants pour confirmer des commandes,
-    et (à venir) gère crédits, webhooks, clés API et merchants en self-service.
+    et gère crédits, webhooks, clés API et (à venir) merchants en self-service.
 
     **Statut des endpoints** :
     - `x-status: live` — implémenté et appelable en prod aujourd'hui.
     - `x-status: planned` — cible contractuelle, pas encore implémentée. `404` en attendant. Disponible après M4 (cf roadmap interne).
+    - `x-status: internal` — route technique, pas sous le SLA `/v1/*`.
 
     **Format d'erreur** : toutes les erreurs sous `/v1/*` sont au format
     RFC 7807 `application/problem+json` — cf `docs/errors.md`.
@@ -24,8 +25,35 @@ info:
     le body des réponses d'erreur RFC 7807 et dans nos logs serveurs.
     Joignez-le à tout ticket support.
 
+    **Headers response transverses** (émis sur toutes les responses `/v1/*`,
+    succès comme erreur — non répétés par endpoint pour lisibilité) :
+
+    - `X-Request-ID` (UUID v4) — cf bloc Traçabilité ci-dessus. Schéma :
+      `#/components/headers/RequestIdResponse`.
+    - `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset`
+      (M3.6 C7) — émis sur les 2xx des endpoints rate-limités et aussi
+      sur les 429. Schémas : `#/components/headers/RateLimitLimit`,
+      `RateLimitRemaining`, `RateLimitReset`.
+    - `Retry-After` (RFC 7231) — émis uniquement sur 429, voir
+      `#/components/responses/RateLimited`.
+    - `X-Idempotent-Replay` — uniquement sur `POST /v1/calls` quand la
+      réponse est un replay (P0-1), voir la route.
+
+    Chaque endpoint `/v1/*` déclare son propre plafond rate-limit via
+    l'extension `x-rate-limit: "N/minute"` (valeur source code, cf
+    `api/rate_limit.py` + décorateurs `@limiter.limit(...)`).
+
     Voir aussi : `/docs/getting-started.md`, `/docs/examples.md`,
     `/docs/webhooks.md`, `/docs/errors.md`, `/docs/versioning.md`.
+  x-common-headers:
+    description: |
+      Headers response communs — documentés globalement dans
+      `info.description` pour éviter la duplication sur chaque response.
+    items:
+      - "$ref": "#/components/headers/RequestIdResponse"
+      - "$ref": "#/components/headers/RateLimitLimit"
+      - "$ref": "#/components/headers/RateLimitRemaining"
+      - "$ref": "#/components/headers/RateLimitReset"
   contact:
     name: Yasmine API
     email: contact@akidly.com
@@ -70,6 +98,7 @@ paths:
       summary: Déclencher un appel
       tags: [Calls]
       x-status: live
+      x-rate-limit: "60/minute"
       description: |
         Crée un appel IA sortant. Le canal de délivrance (WhatsApp, GSM)
         est choisi côté Yasmine via la configuration serveur — transparent
@@ -141,11 +170,13 @@ paths:
         "409": { $ref: "#/components/responses/IdempotencyKeyConflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
     get:
       operationId: listCalls
       summary: Lister les appels
       tags: [Calls]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Liste paginée des appels du reseller authentifié (P1-3).
         Tri `created_at DESC` avec tie-break stable `id DESC`.
@@ -185,7 +216,20 @@ paths:
           schema:
             type: string
             enum: [queued, dialing, in_progress, ended, failed]
-          description: Filtre exact sur `calls.status` (col GENERATED).
+          description: |
+            Filtre exact sur `calls.status` (colonne PostgreSQL GENERATED
+            STORED, dérivée des rails `request_status` + `call_status`).
+            Mapping :
+            - `queued` — en attente de permission (rails `queued` /
+              `waiting_user_permission`).
+            - `dialing` — permission acceptée, numérotation en cours
+              (`call_status` parmi `not_started`/`dialing`/`ringing`).
+            - `in_progress` — client décroché (`call_status = connected`).
+            - `ended` — fin naturelle (`call_status = ended`).
+            - `failed` — tout état terminal non-nominal : permission
+              refusée, expirée, quota bloqué, annulé reseller, ou tout
+              autre échec non mappé. Un cancel reseller termine ici et
+              non dans un `cancelled` distinct côté `calls.status`.
         - in: query
           name: merchant_id
           required: false
@@ -230,6 +274,7 @@ paths:
       summary: Récupérer un appel
       tags: [Calls]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Lit l'état courant d'un appel scopé au reseller authentifié
         (P0-2). Utile pour réconcilier après un webhook perdu ou un
@@ -295,6 +340,7 @@ paths:
       summary: Annuler un appel en cours
       tags: [Calls]
       x-status: live
+      x-rate-limit: "120/minute"
       description: |
         Annule un appel **en cours** (rail APPEL en `dialing`/`ringing`/
         `connected`, ou demande encore `queued`). Pattern Stripe-like sur
@@ -324,12 +370,9 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/CallCancelOut" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "404":
-          description: Appel introuvable ou appartenant à un autre reseller.
-          content:
-            application/problem+json:
-              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/CallNotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   # -------------------------------------------------------------------------
   # Account — profil, solde, usage, clés, webhooks sortants
@@ -340,6 +383,7 @@ paths:
       summary: Identité du reseller courant
       tags: [Account]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Retourne les 5 champs d'identité du reseller authentifié (P1-1).
         Anti-BOPLA : pas de `balance_seconds` (voir `/v1/me/balance`),
@@ -359,6 +403,7 @@ paths:
       summary: Ledger paginé (topup, debit_call, refund, adjustment)
       tags: [Account]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Historique paginé du ledger `credit_transactions` (P1-1).
         Tri `created_at DESC, id DESC` (tie-break stable). Curseur
@@ -413,6 +458,7 @@ paths:
       summary: Consommation mensuelle agrégée
       tags: [Account]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Agrégats sur la période `YYYY-MM` (P1-1). Défaut = mois
         courant UTC si `?period` absent. Fenêtre semi-open
@@ -457,6 +503,7 @@ paths:
       summary: Lister les clés API (sans le secret)
       tags: [API Keys]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Retourne les clés API du reseller courant (P1-4). Inclut les
         clés actives ET révoquées (historique complet). Tri
@@ -478,6 +525,7 @@ paths:
       summary: Créer une nouvelle clé API
       tags: [API Keys]
       x-status: live
+      x-rate-limit: "5/minute"
       description: |
         Génère une nouvelle clé API (P1-4). Pattern Stripe/GitHub :
         la `secret_key` est **visible UNE SEULE FOIS** dans la réponse
@@ -508,6 +556,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /v1/me/api-keys/{key_id}:
     delete:
@@ -515,6 +564,7 @@ paths:
       summary: Révoquer une clé API
       tags: [API Keys]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Soft-delete : pose `revoked_at = NOW()` sur la clé (P1-4). La
         clé apparaîtra toujours dans `GET /v1/me/api-keys` avec
@@ -552,6 +602,7 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /v1/me/api-keys/{key_id}/events:
     get:
@@ -559,6 +610,7 @@ paths:
       summary: Journal d'audit d'une clé API
       tags: [API Keys]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Renvoie les événements associés à une clé API (P1-6). Trois
         types d'events sont émis par le serveur aujourd'hui :
@@ -628,6 +680,7 @@ paths:
       summary: Solde courant du reseller
       tags: [Account]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Solde du reseller authentifié, exprimé en **secondes facturables**
         (P0-2). Un appel coûte son `billed_seconds` (`max(duration_s, 10)`).
@@ -653,6 +706,7 @@ paths:
       summary: Tester son webhook (synchrone)
       tags: [Webhooks]
       x-status: live
+      x-rate-limit: "10/minute"
       description: |
         Déclenche un `webhook.test` synchrone vers l'URL configurée du
         reseller (P1-2). Retourne immédiatement le résultat (HTTP status,
@@ -682,6 +736,7 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /v1/me/webhooks/deliveries:
     get:
@@ -689,6 +744,7 @@ paths:
       summary: Historique paginé des livraisons webhook
       tags: [Webhooks]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Audit des livraisons webhook sortantes du reseller (P1-2).
         Tri `attempted_at DESC, id DESC`. Curseur opaque P1-3.
@@ -757,6 +813,7 @@ paths:
       summary: Configurer le webhook sortant
       tags: [Webhooks]
       x-status: live
+      x-rate-limit: "10/minute"
       description: |
         Enregistre l'URL du webhook sortant et génère un secret HMAC-SHA256.
 
@@ -802,12 +859,21 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+              example:
+                type: https://docs.yasmine.akidly.com/errors/webhook_already_configured
+                title: Conflict
+                status: 409
+                detail: Ce reseller a deja un webhook actif. DELETE d'abord pour rotate volontairement le secret, puis POST a nouveau.
+                instance: /v1/me/webhooks
+                request_id: a1b2c3d4
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
     get:
       operationId: getWebhook
       summary: Consulter la config webhook
       tags: [Webhooks]
       x-status: live
+      x-rate-limit: "600/minute"
       description: |
         Retourne la config active. Le `secret` n'est jamais renvoyé —
         seul `secret_prefix` (6 chars + `…`) est exposé pour permettre
@@ -824,12 +890,21 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+              example:
+                type: https://docs.yasmine.akidly.com/errors/webhook_not_configured
+                title: Not Found
+                status: 404
+                detail: Aucun webhook configure pour ce reseller.
+                instance: /v1/me/webhooks
+                request_id: a1b2c3d4
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
     delete:
       operationId: deleteWebhook
       summary: Désactiver le webhook
       tags: [Webhooks]
       x-status: live
+      x-rate-limit: "10/minute"
       description: |
         Soft-delete : la config passe en `active=false`. L'historique
         `webhook_deliveries` reste intact (pour audit).
@@ -841,7 +916,15 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+              example:
+                type: https://docs.yasmine.akidly.com/errors/webhook_not_configured
+                title: Not Found
+                status: 404
+                detail: Aucun webhook configure pour ce reseller.
+                instance: /v1/me/webhooks
+                request_id: a1b2c3d4
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /v1/me/webhooks/rotate-secret:
     post:
@@ -849,6 +932,7 @@ paths:
       summary: Rotate le signing secret HMAC
       tags: [Webhooks]
       x-status: live
+      x-rate-limit: "5/minute"
       description: |
         **P1-8** — Rotate atomiquement le `signing_secret` HMAC-SHA256
         du webhook actif. Pattern Stripe : nouveau secret au format
@@ -874,7 +958,15 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+              example:
+                type: https://docs.yasmine.akidly.com/errors/webhook_not_configured
+                title: Not Found
+                status: 404
+                detail: Aucun webhook actif a rotate. Configurer d'abord via POST /v1/me/webhooks.
+                instance: /v1/me/webhooks/rotate-secret
+                request_id: a1b2c3d4
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   # -------------------------------------------------------------------------
   # Merchants
@@ -1029,6 +1121,34 @@ paths:
         "503":
           description: Serveur mal configuré (`WHATSAPP_APP_SECRET` absent).
 
+  # -------------------------------------------------------------------------
+  # Ops — probe santé (hors SLA /v1/*)
+  # -------------------------------------------------------------------------
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Probe santé applicatif
+      tags: [Internal]
+      x-status: internal
+      security: []
+      description: |
+        Probe santé pour monitoring / load balancer. **Route interne** —
+        pas sous le SLA `/v1/*`, pas de rate-limit, pas d'auth, pas de
+        versioning. **Ne pas utiliser pour orchestration billing** ni
+        comme signal de disponibilité métier — elle renvoie `200 OK` dès
+        que le process Python répond, indépendamment de l'état de la DB
+        ou des dépendances externes. Pour connaître l'état métier, se
+        reporter à `GET /v1/me` (auth requise).
+      responses:
+        "200":
+          description: Process vivant.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1101,6 +1221,37 @@ components:
       # syntaxiquement invalide est traite cote serveur comme 404
       # `call_not_found` (pas 422), pour homogeneiser l'anti-enum.
       schema: { type: string }
+  headers:
+    RequestIdResponse:
+      description: |
+        UUID v4 qui identifie cette requête côté serveur (P1-5). Émis
+        sur **toutes** les responses, succès comme erreur. Respecte la
+        valeur fournie par le client via le header `X-Request-ID` si
+        format UUID v4 strict valide, sinon régénère. À joindre à tout
+        ticket support pour tracer une requête.
+      schema:
+        type: string
+        format: uuid
+      example: 3f8e9d12-4b5a-4c6d-8e7f-123456789abc
+    RateLimitLimit:
+      description: |
+        Plafond rate-limit appliqué à cet endpoint pour la clé API
+        courante, exprimé en requêtes par minute (M3.6 C7). Identique
+        quelle que soit l'issue de la requête (2xx, 4xx, 5xx).
+      schema: { type: integer }
+      example: 600
+    RateLimitRemaining:
+      description: |
+        Nombre de requêtes restant dans la fenêtre courante (M3.6 C7).
+        Vaut `0` sur une 429.
+      schema: { type: integer }
+      example: 597
+    RateLimitReset:
+      description: |
+        Timestamp Unix (secondes depuis l'epoch) du prochain reset de
+        la fenêtre rate-limit (M3.6 C7).
+      schema: { type: integer }
+      example: 1714744860
   responses:
     Unauthorized:
       description: Clé API absente, invalide ou révoquée.
@@ -1233,6 +1384,22 @@ components:
                   retry_after:
                     type: integer
                     description: Secondes avant le prochain reset (identique au header).
+    InternalError:
+      description: |
+        Erreur interne inattendue côté Yasmine (slug `internal_error`).
+        Toujours loguée côté serveur avec le `request_id` correspondant.
+        Le client doit retenter (idempotent), ou contacter le support en
+        joignant `request_id`. Le détail de la stack n'est jamais exposé.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example:
+            type: https://docs.yasmine.akidly.com/errors/internal_error
+            title: Internal Server Error
+            status: 500
+            detail: Une erreur interne est survenue. Contacter le support avec la valeur de request_id.
+            instance: /v1/calls
+            request_id: a1b2c3d4
   schemas:
     # -----------------------------------------------------------------------
     # Problem (RFC 7807)
