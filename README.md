@@ -24,3 +24,4 @@ Configurer ensuite le token API dans l'environnement :
 ---
 
 > ⚠️ **Auto-generated repo.** This repository is automatically generated from [cbensassi2/yasmine](https://github.com/cbensassi2/yasmine) via `.github/workflows/sync-plugin.yml`. **Do not commit directly here** — any manual change will be overwritten at the next sync.
+
