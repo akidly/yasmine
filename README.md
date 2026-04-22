@@ -4,7 +4,8 @@ MCP plugin pour interagir avec l'API Yasmine (agent vocal IA pour confirmation d
 
 ## Installation
 
-    /plugin install yasmine@akidly/yasmine
+    /plugin marketplace add akidly/yasmine
+    /plugin install yasmine@akidly
 
 Configurer ensuite le token API dans l'environnement :
 
