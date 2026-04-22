@@ -319,7 +319,7 @@ Pas encore. Chaque appel consomme du crédit réel et déclenche un appel télé
 Oui — depuis P0-1 le header est obligatoire sur `POST /v1/calls`, sinon `400 missing_idempotency_key`. Format libre, 1-255 chars (UUID v4 recommandé), TTL 24 h, scope par reseller. Une 2e requête identique (même clé + même body) renvoie la réponse stockée bit-for-bit avec `X-Idempotent-Replay: true`. Une 2e requête avec la même clé mais un body différent retourne `409 idempotency_key_conflict`. Voir `docs/examples.md §4`.
 
 **Quels pays sont supportés ?**
-Pour l'instant : `MA` (Maroc), `DZ` (Algérie), `TN` (Tunisie), `FR` (France). Le choix de la variante de prompt (darija / français) est fait côté serveur selon le `country`, transparent pour vous.
+Pour l'instant : `MA` (Maroc), `DZ` (Algérie), `TN` (Tunisie), `FR` (France). Le choix du profil conversationnel (darija / français) est fait côté serveur selon le `country`, transparent pour vous.
 
 **Comment suis-je facturé ?**
 En **secondes billables** = `max(duration_s, 10)`. Chaque appel consomme au minimum 10 secondes même s'il est plus court.

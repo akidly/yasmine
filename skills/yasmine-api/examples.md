@@ -70,7 +70,7 @@ curl -X POST "$BASE/v1/calls" \
   }'
 ```
 
-Seule la `country` change (`FR` au lieu de `MA`). Le serveur bascule automatiquement vers la variante de prompt française.
+Seule la `country` change (`FR` au lieu de `MA`). Le serveur bascule automatiquement vers le profil conversationnel français.
 
 ---
 

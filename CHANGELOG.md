@@ -396,7 +396,7 @@ Crash mid-retry : les retries via `asyncio.sleep` sont perdus au crash process (
 - `.env.example` : ajout `WHATSAPP_APP_SECRET=` (critique depuis M1 fail-closed — était oublié).
 - `.claude/rules/webhooks.md` : correction `WHATSAPP_WEBHOOK_VERIFY_TOKEN` → `WHATSAPP_APP_SECRET` pour la vérif HMAC (bug #doc-1 corrigé).
 - `.claude/rules/call-flow.md` : mention `debug_bus` retirée (bus inerte sans subscriber depuis M2).
-- `.claude/rules/prompts.md` + `.claude/skills/new-prompt-variant/SKILL.md` : alignés sur `POST /v1/calls` + mapping country ISO interne.
+- Règles internes agent + skill de création de profils conversationnels pays : alignés sur `POST /v1/calls` + mapping country ISO interne.
 - `api/v1/calls.py` : docstring réécrite (description du flow actuel, sans historique).
 - `api/call_setup.py` : docstring pointant vers `/v1/calls`.
 - `scripts/seed_reseller.py` : docstring allégée (plus de mention de l'ancien `seed_dev.py`).
@@ -426,7 +426,7 @@ Crash mid-retry : les retries via `asyncio.sleep` sont perdus au crash process (
 - POST /call/whatsapp supprimé. Sera remplacé par POST /v1/calls en M3.
 - `POST /v1/calls` — validation stricte des inputs (M3.3). Pas de transition gracieuse (aucune intégration client active).
   - `total` (str libre) **remplacé** par `amount` (`Decimal`, requis, `0 < x ≤ 1_000_000`) + `currency` (str, requis, ISO-4217 `^[A-Z]{3}$`).
-  - `country` — désormais un **code pays ISO 3166-1 alpha-2** : `"MA"`, `"DZ"`, `"TN"`, `"FR"`. Défaut `"MA"`. Le choix de la variante de prompt interne (darija marocaine / française) est fait côté serveur via un mapping dédié — transparent pour le reseller. Plusieurs codes ISO peuvent pointer vers la même variante (ex. MA/DZ/TN → `maroc_02`) tant qu'il n'y a pas de prompts dédiés.
+  - `country` — désormais un **code pays ISO 3166-1 alpha-2** : `"MA"`, `"DZ"`, `"TN"`, `"FR"`. Défaut `"MA"`. Le choix du profil conversationnel interne (darija marocaine / française) est fait côté serveur via un mapping dédié — transparent pour le reseller. Plusieurs codes ISO peuvent pointer vers le même profil (ex. MA/DZ/TN → `maroc_02`) tant qu'il n'y a pas de profils localisés distincts.
   - `phone_number` : validé par libphonenumber (`is_valid_number`), renormalisé en E.164 canonique avant traitement.
   - `merchant_ref` : regex `^[a-zA-Z0-9_.-]+$`, max 128 chars.
   - `customer_name` : max 200 chars, strip auto, rejet caractères de contrôle ASCII, normalisation Unicode NFC.

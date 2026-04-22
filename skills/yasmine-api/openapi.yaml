@@ -1328,7 +1328,7 @@ components:
           description: |
             Code pays ISO 3166-1 alpha-2 du client à appeler. Détermine
             la langue et le contexte culturel utilisés par l'IA. Les
-            variantes de prompt internes sont choisies côté serveur —
+            profils conversationnels internes sont choisis côté serveur —
             transparent pour le reseller.
           examples: [MA]
         metadata:
@@ -1415,7 +1415,7 @@ components:
           type: string
           nullable: true
           enum: [MA, DZ, TN, FR, null]
-          description: Code ISO echoed du reseller — jamais la variante de prompt interne.
+          description: Code ISO echoed du reseller — jamais le profil conversationnel interne.
         metadata:
           type: object
           nullable: true
