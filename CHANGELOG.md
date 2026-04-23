@@ -6,6 +6,11 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Added — Reseller profile fields
+
+- `GET /v1/me` expose désormais 10 nouveaux champs profil société : `owner_name`, `owner_phone_e164`, `default_language`, `country`, `timezone`, `legal_name`, `tax_id`, `billing_address`, `business_type`, `website_url`. Tous nullables, retournés `null` pour les resellers existants tant qu'ils ne sont pas renseignés. Aucun endpoint d'update self-service pour l'instant (roadmap M4) — les valeurs sont posées côté ops via SQL direct. Migration Alembic `0013`.
+- Validation stricte côté contrat : `country` matche `^[A-Z]{2}$` (ISO 3166-1 alpha-2), `business_type` limité à l'enum `[single_merchant, multi_merchant, platform]`. Champ inconnu rejeté en 422 (Pydantic `extra="forbid"`).
+
 ### Changed — revert P1-9 retention automatique
 
 - **Decision produit 2026-04-23** (cf `.claude/context/decisions.md`) : la purge automatique quotidienne des donnees webhook internes (`webhook_raw.payload`, `call_events.data.raw`, `api_key_events`) documentee en P1-9 est abandonnee. Les donnees sont desormais **conservees indefiniment** (valeur historique pour debug + analytics + amelioration continue). `scripts/retention_purge.py` reste disponible pour execution manuelle ponctuelle (ex. fin de contrat reseller, demande d'effacement RGPD specifique). **Aucun impact sur les reponses API ni sur les secrets reseller** — seulement sur les tables internes d'audit.

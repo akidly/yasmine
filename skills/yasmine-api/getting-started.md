@@ -258,7 +258,7 @@ Détails complets dans `docs/webhooks.md`.
 
 Trois endpoints self-service pour la supervision :
 
-- **`GET /v1/me`** : identité (`reseller_id`, `name`, `email`, `created_at`, `rate_limit_per_minute`).
+- **`GET /v1/me`** : identité du compte + profil société (propriétaire, langue par défaut, pays, raison sociale, identifiant fiscal, adresse de facturation, archétype, etc.). Liste complète : voir schéma `MeOut` dans `docs/openapi.yaml`.
 - **`GET /v1/me/transactions`** : historique paginé du ledger (mêmes `next_cursor`/`has_more` que `/v1/calls`). Filtres `?since=&until=`.
 - **`GET /v1/me/usage?period=YYYY-MM`** : consommation mensuelle (défaut = mois courant UTC). Breakdown par `call_status` (`completed`/`failed`/`cancelled`).
 

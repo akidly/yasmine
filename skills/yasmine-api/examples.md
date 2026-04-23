@@ -186,9 +186,11 @@ curl -H "Authorization: Bearer $YK" \
 Trois endpoints de lecture self-service.
 
 ```bash
-# 1. Identité — 5 champs, anti-BOPLA (pas de balance ni status).
+# 1. Identité + profil société (anti-BOPLA : pas de balance ni status).
+#    Les champs profil (owner_name, country, tax_id, business_type, …) sont
+#    `null` tant que la fiche société n'a pas été renseignée côté ops.
+#    Schéma complet : voir `MeOut` dans `docs/openapi.yaml`.
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me"
-# {"reseller_id":"...","name":"Acme","email":"ops@acme.com","created_at":"...","rate_limit_per_minute":600}
 
 # 2. Solde (livré P0-2, non-régressé par P1-1).
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me/balance"

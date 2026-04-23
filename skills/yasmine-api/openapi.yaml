@@ -1758,6 +1758,12 @@ components:
       description: |
         Réponse `GET /v1/me` (P1-1). Anti-BOPLA : ni `balance_seconds`
         (voir `/v1/me/balance`), ni `status`, ni aucun compteur interne.
+
+        Les 10 champs profil société (owner_*, default_language, country,
+        timezone, legal_name, tax_id, billing_address, business_type,
+        website_url) sont tous `null` tant que la fiche société n'a pas
+        été renseignée en DB côté ops. Aucun endpoint d'update self-service
+        aujourd'hui (roadmap M4).
       required: [reseller_id, name, created_at, rate_limit_per_minute]
       additionalProperties: false
       properties:
@@ -1776,6 +1782,71 @@ components:
             Plafond requêtes/min sur `/v1/*` (valeur globale serveur,
             pas par-reseller aujourd'hui).
           example: 600
+        owner_name:
+          type: string
+          nullable: true
+          maxLength: 120
+          description: "Nom du propriétaire du compte (personne physique)."
+          example: "Chokri Bensassi"
+        owner_phone_e164:
+          type: string
+          nullable: true
+          maxLength: 20
+          description: "Téléphone propriétaire, format E.164."
+          example: "+212612345678"
+        default_language:
+          type: string
+          nullable: true
+          maxLength: 8
+          description: "Langue par défaut du compte (`ar`, `fr`)."
+          example: "fr"
+        country:
+          type: string
+          nullable: true
+          pattern: "^[A-Z]{2}$"
+          description: |
+            Code pays ISO 3166-1 alpha-2 du compte (deux lettres majuscules
+            exactes).
+          example: "MA"
+        timezone:
+          type: string
+          nullable: true
+          maxLength: 40
+          description: "Fuseau horaire IANA."
+          example: "Africa/Casablanca"
+        legal_name:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: "Raison sociale officielle."
+          example: "MAGHREB TECHNOLOGY SENSORS SARL AU"
+        tax_id:
+          type: string
+          nullable: true
+          maxLength: 64
+          description: |
+            Identifiant fiscal (ICE Maroc, SIRET France, VAT EU, etc.).
+          example: "002123456000099"
+        billing_address:
+          type: string
+          nullable: true
+          description: "Adresse de facturation (texte libre, multi-lignes)."
+          example: "15 Rue Ibn Tofail, Casablanca"
+        business_type:
+          type: string
+          nullable: true
+          enum: [single_merchant, multi_merchant, platform]
+          description: |
+            Archétype du reseller : `single_merchant` (une seule boutique),
+            `multi_merchant` (plusieurs boutiques gérées), `platform`
+            (agrégateur / SaaS revendant Yasmine à ses propres marchands).
+          example: "multi_merchant"
+        website_url:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: "Site commercial du reseller (URL publique)."
+          example: "https://example.test"
     TransactionOut:
       type: object
       description: |
