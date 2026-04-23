@@ -6,6 +6,12 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Changed — revert P1-9 retention automatique
+
+- **Decision produit 2026-04-23** (cf `.claude/context/decisions.md`) : la purge automatique quotidienne des donnees webhook internes (`webhook_raw.payload`, `call_events.data.raw`, `api_key_events`) documentee en P1-9 est abandonnee. Les donnees sont desormais **conservees indefiniment** (valeur historique pour debug + analytics + amelioration continue). `scripts/retention_purge.py` reste disponible pour execution manuelle ponctuelle (ex. fin de contrat reseller, demande d'effacement RGPD specifique). **Aucun impact sur les reponses API ni sur les secrets reseller** — seulement sur les tables internes d'audit.
+- **Scrubbing retroactif** `webhook_deliveries.target_url` : migration Alembic `0012` tronque a `scheme://host` toutes les URLs stockees avant ce deploiement. Accompagne le fix applicatif qui masque desormais a l'insertion (protection contre tokens en path/query). Irreversible.
+- `docs/infrastructure.md` section "Retention & hygiene" reecrite en consequence : le script reste documente comme outil manuel.
+
 ### Fixed
 - `.github/workflows/sync-plugin.yml` : `DRY_RUN` fallback corrigé (le ternaire GHA `A && B || C` court-circuitait à `C` quand `B = false`, donc une case `dry_run` décochée en `workflow_dispatch` retombait sur `'true'` via le fallback au lieu de rester `false`). Fix : tester d'abord `github.event_name == 'push'` (toujours truthy string `'true'`), laisser `inputs.dry_run` passer tel quel en `workflow_dispatch`.
 
