@@ -58,6 +58,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ### Fixed
 
+- Sérialisation correcte des notifications de progression d'appel (RINGING, ACCEPTED) côté webhook entrant : un verrou par appel est maintenant pris à chaque dispatch, identique au comportement déjà en place pour les notifications majeures (`connect`, `terminate`, `reject`). Avant ce fix, deux notifications de progression concurrentes pouvaient s'exécuter en parallèle sans coordination, ouvrant une fenêtre de race conditions sur les transitions d'état d'appel.
 - Statut de rejet client (`REJECTED`) désormais traité correctement par le dispatcher webhook entrant — transition `call_status=failed` + `failure_reason=client_rejected` + event sortant `call.failed` émis (précédemment tombait en metadata `unknown_event_seen`, l'appel restait figé en état intermédiaire).
 - Suppression d'un doublon possible de l'event sortant `call.started` en conditions de course serrée entre la phase d'origination interne et le webhook Meta. Seul le webhook Meta reste source d'émission de cet event (source de vérité unique côté reseller).
 - `.github/workflows/sync-plugin.yml` : `DRY_RUN` fallback corrigé (le ternaire GHA `A && B || C` court-circuitait à `C` quand `B = false`, donc une case `dry_run` décochée en `workflow_dispatch` retombait sur `'true'` via le fallback au lieu de rester `false`). Fix : tester d'abord `github.event_name == 'push'` (toujours truthy string `'true'`), laisser `inputs.dry_run` passer tel quel en `workflow_dispatch`.
