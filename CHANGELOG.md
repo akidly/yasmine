@@ -6,6 +6,10 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Added
+
+- Table `calls` : 2 nouvelles colonnes internes de traçabilité (`direction` pour préparer l'inbound futur, + variante conversationnelle tracée par appel pour audit). Non exposées dans l'API (pas de projection côté `CallOut`). Migration Alembic `0016`.
+
 ### Changed — Merchants + orders enrichis, payload POST /v1/calls restructuré (Phase 2-final)
 
 - **BREAKING payload `POST /v1/calls`** : restructuration complète en sous-objets nested.
