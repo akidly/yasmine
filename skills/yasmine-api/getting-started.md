@@ -54,15 +54,19 @@ curl -X POST https://api.yasmine.akidly.com/v1/calls \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
-    "phone_number": "+212612345678",
+    "customer": {
+      "name": "Ahmed Bennani",
+      "phone_number": "+212612345678"
+    },
     "merchant_ref": "ma-boutique-test",
-    "customer_name": "Ahmed Bennani",
     "purpose": "confirmation",
     "amount": "249.00",
     "currency": "MAD",
     "country": "MA"
   }'
 ```
+
+Le sous-objet `customer` accepte également des champs facultatifs (`gender`, `email`, `notes`, `language`) pour enrichir la fiche client. La liste complète des champs est dans le schéma `CustomerInput` de [`docs/openapi.yaml`](https://docs.yasmine.akidly.com/openapi.yaml).
 
 Réponse attendue (HTTP **201 Created**) :
 
@@ -142,7 +146,7 @@ Toutes les erreurs `/v1/*` sont renvoyées au format RFC 7807 `application/probl
   "instance": "/v1/calls",
   "request_id": "5312821c",
   "errors": [
-    { "loc": ["body", "phone_number"], "msg": "Value error, phone_number invalide — format attendu E.164 (ex: +212612345678)", "type": "value_error" },
+    { "loc": ["body", "customer", "phone_number"], "msg": "Value error, phone_number invalide — format attendu E.164 (ex: +212612345678)", "type": "value_error" },
     { "loc": ["body", "amount"], "msg": "Field required", "type": "missing" }
   ]
 }

@@ -6,6 +6,14 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Added — Customer profile fields (Phase 2A)
+
+- **BREAKING** : `POST /v1/calls` attend désormais un sous-objet `customer: {name, phone_number, ...}` à la place de `customer_name` et `phone_number` plats à la racine. Le nouveau schéma `CustomerInput` est documenté dans `docs/openapi.yaml`. Les champs historiques à la racine sont supprimés — un payload legacy renvoie `422 extra_forbidden` sur `customer_name`/`phone_number` et `missing` sur `customer`.
+- 5 nouveaux champs `customers` (tous nullables) : `gender`, `email`, `notes` (alimentés dès maintenant via `POST /v1/calls` à travers `customer.{gender|email|notes}`) ; `whatsapp_profile_name`, `meta_user_id` (colonnes réservées, alimentation prévue Phase 2A-bis future via dispatcher webhook Meta). Migration Alembic `0014`.
+- Nouvelle contrainte `customers_gender_check` sur `gender IN ('male','female','unknown')`. Validation Pydantic : `email` regex format boundary + `max_length=100`, `notes` `max_length=500`, `gender` enum strict.
+- **COALESCE stickiness** sur `customers_repo.upsert` : les champs `gender`/`email`/`notes`/`name`/`language` ne sont plus écrasés par un POST ultérieur qui ne les renseigne pas (protection contre suppression involontaire).
+- Index partiel `ix_customers_meta_user_id` posé (WHERE `meta_user_id IS NOT NULL`) en prévision du dispatcher webhook Phase 2A-bis — évite un `CREATE INDEX` bloquant sur grande table plus tard.
+
 ### Added — Reseller profile fields
 
 - `GET /v1/me` expose désormais 10 nouveaux champs profil société : `owner_name`, `owner_phone_e164`, `default_language`, `country`, `timezone`, `legal_name`, `tax_id`, `billing_address`, `business_type`, `website_url`. Tous nullables, retournés `null` pour les resellers existants tant qu'ils ne sont pas renseignés. Aucun endpoint d'update self-service pour l'instant (roadmap M4) — les valeurs sont posées côté ops via SQL direct. Migration Alembic `0013`.

@@ -21,9 +21,11 @@ curl -X POST "$BASE/v1/calls" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
-    "phone_number": "+212612345678",
+    "customer": {
+      "name": "Ahmed Bennani",
+      "phone_number": "+212612345678"
+    },
     "merchant_ref": "boutique-casa-01",
-    "customer_name": "Ahmed Bennani",
     "purpose": "confirmation",
     "amount": "249.00",
     "currency": "MAD",
@@ -50,9 +52,11 @@ Réponse (HTTP **201**) :
 
 L'agent parle en darija marocaine. Durée typique : 40-60 secondes.
 
+Le sous-objet `customer` accepte aussi `gender`, `email`, `notes`, `language` — voir le schéma `CustomerInput` dans `docs/openapi.yaml` pour la liste complète des champs.
+
 ---
 
-## 2. Appel France
+## 2. Appel France avec fiche client enrichie
 
 ```bash
 curl -X POST "$BASE/v1/calls" \
@@ -60,9 +64,14 @@ curl -X POST "$BASE/v1/calls" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
-    "phone_number": "+33612345678",
+    "customer": {
+      "name": "Claire Dupont",
+      "phone_number": "+33612345678",
+      "gender": "female",
+      "email": "claire@example.com",
+      "notes": "VIP, horaires bureau uniquement"
+    },
     "merchant_ref": "boutique-paris-01",
-    "customer_name": "Claire Dupont",
     "purpose": "relance_paiement",
     "amount": "49.90",
     "currency": "EUR",
@@ -70,7 +79,7 @@ curl -X POST "$BASE/v1/calls" \
   }'
 ```
 
-Seule la `country` change (`FR` au lieu de `MA`). Le serveur bascule automatiquement vers le profil conversationnel français.
+La `country` bascule automatiquement le serveur vers le profil conversationnel français. Les champs facultatifs `gender`/`email`/`notes` sont persistés côté serveur et réutilisés lors des appels suivants pour le même client (COALESCE stickiness — un POST ultérieur sans ces champs n'écrase pas les valeurs existantes).
 
 ---
 
@@ -84,9 +93,11 @@ curl -X POST "$BASE/v1/calls" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
-    "phone_number": "+212612345678",
+    "customer": {
+      "name": "Ahmed Bennani",
+      "phone_number": "+212612345678"
+    },
     "merchant_ref": "boutique-casa-01",
-    "customer_name": "Ahmed Bennani",
     "purpose": "livraison",
     "amount": "180.00",
     "currency": "MAD",
@@ -284,7 +295,7 @@ curl -X POST "$BASE/v1/calls" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $IDEMP" \
-  -d '{ "phone_number": "+212612345678", "merchant_ref": "x", "customer_name": "X", "purpose": "confirmation", "amount": "100", "currency": "MAD", "country": "MA" }'
+  -d '{ "customer": { "name": "X", "phone_number": "+212612345678" }, "merchant_ref": "x", "purpose": "confirmation", "amount": "100", "currency": "MAD", "country": "MA" }'
 
 # Si timeout / erreur réseau, retry avec LA MÊME clé + LE MÊME body
 curl -X POST "$BASE/v1/calls" \
@@ -314,9 +325,11 @@ curl -X POST "$BASE/v1/calls" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -d '{
-    "phone_number": "+0000000000",
+    "customer": {
+      "name": "",
+      "phone_number": "+0000000000"
+    },
     "merchant_ref": "ma boutique",
-    "customer_name": "",
     "purpose": "test",
     "amount": "-10",
     "currency": "mad",
@@ -335,9 +348,9 @@ Réponse (HTTP **422**) :
   "instance": "/v1/calls",
   "request_id": "a1b2c3d4",
   "errors": [
-    { "loc": ["body", "phone_number"], "msg": "Value error, phone_number invalide — format attendu E.164 (ex: +212612345678)", "type": "value_error" },
+    { "loc": ["body", "customer", "phone_number"], "msg": "Value error, phone_number invalide — format attendu E.164 (ex: +212612345678)", "type": "value_error" },
+    { "loc": ["body", "customer", "name"], "msg": "String should have at least 1 character", "type": "string_too_short" },
     { "loc": ["body", "merchant_ref"], "msg": "String should match pattern '^[a-zA-Z0-9_.-]+$'", "type": "string_pattern_mismatch" },
-    { "loc": ["body", "customer_name"], "msg": "String should have at least 1 character", "type": "string_too_short" },
     { "loc": ["body", "amount"], "msg": "Decimal input should be greater than 0", "type": "greater_than" },
     { "loc": ["body", "currency"], "msg": "String should match pattern '^[A-Z]{3}$'", "type": "string_pattern_mismatch" },
     { "loc": ["body", "country"], "msg": "Input should be 'MA', 'DZ', 'TN' or 'FR'", "type": "literal_error" }
@@ -347,7 +360,7 @@ Réponse (HTTP **422**) :
 
 ### Champs inconnus → 422 `extra_forbidden` (P1-12)
 
-Tout champ qui ne fait pas partie du schéma `CallCreate` est rejeté. Un typo comme `custommer_name` au lieu de `customer_name` ne passe pas silencieusement — le serveur renvoie **422** avec le nom exact du champ fautif :
+Tout champ qui ne fait pas partie du schéma `CallCreate` ou `CustomerInput` est rejeté. Un typo à la racine (par exemple `custommer` au lieu de `customer`) ou à l'intérieur de `customer` (par exemple `phonne_number`) ne passe pas silencieusement — le serveur renvoie **422** avec le chemin exact du champ fautif :
 
 ```json
 {
@@ -358,7 +371,7 @@ Tout champ qui ne fait pas partie du schéma `CallCreate` est rejeté. Un typo c
   "request_id": "f1b14110-...",
   "detail": "Un ou plusieurs champs du payload sont invalides.",
   "errors": [
-    { "loc": ["body", "custommer_name"], "msg": "Extra inputs are not permitted", "type": "extra_forbidden" }
+    { "loc": ["body", "customer", "phonne_number"], "msg": "Extra inputs are not permitted", "type": "extra_forbidden" }
   ]
 }
 ```

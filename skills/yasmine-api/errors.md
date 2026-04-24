@@ -120,7 +120,7 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
 
 **Remediation** :
 - Valider le body côté client avant envoi (générateur OpenAPI, Pydantic, JSON Schema).
-- Lire le tableau `errors[]` dans la réponse pour le détail par champ : `errors[i].loc` = chemin (ex. `["body", "phone_number"]`), `errors[i].msg` = message Pydantic, `errors[i].type` = code Pydantic.
+- Lire le tableau `errors[]` dans la réponse pour le détail par champ : `errors[i].loc` = chemin (ex. `["body", "customer", "phone_number"]` pour un champ nested), `errors[i].msg` = message Pydantic, `errors[i].type` = code Pydantic.
 - Sur les enums, prendre la valeur exacte depuis `docs/openapi.yaml` (les `enum:` sont normatifs).
 
 **Example** :
@@ -133,7 +133,7 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
   "instance": "/v1/calls",
   "request_id": "a1b2c3d4",
   "errors": [
-    {"loc": ["body", "phone_number"], "msg": "field required", "type": "missing"},
+    {"loc": ["body", "customer", "phone_number"], "msg": "field required", "type": "missing"},
     {"loc": ["body", "country"], "msg": "value is not a valid enumeration member", "type": "enum"}
   ]
 }
