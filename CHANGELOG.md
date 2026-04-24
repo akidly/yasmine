@@ -6,8 +6,13 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation webhooks : rectification de la description de la dédup `webhook_raw` dans plusieurs fichiers internes + docstring code. L'idempotence effective repose sur l'advisory lock PostgreSQL par `call_id` + les gardes de transition applicatives du dispatcher, pas sur la contrainte `UNIQUE(dedup_hash, received_at)` qui ne bloque pas les retries (contrainte composite avec timestamp qui change à chaque INSERT). `docs/webhooks.md` précise désormais qu'il documente les webhooks sortants uniquement.
+
 ### Added
 
+- `docs/webhooks.md` est désormais synchronisé vers le plugin `akidly/yasmine` au push master.
 - Audit interne des échecs Meta : 3 nouvelles colonnes internes (`calls.meta_error_code`, `calls.meta_error_title`, `calls.meta_error_details`) projetées depuis les webhooks `terminate FAILED` WhatsApp. Le champ `failure_reason` (exposé via `CallOut` et l'event sortant `call.failed`) s'enrichit désormais du code Meta au format `meta_terminate:<code>` (ex. `meta_terminate:138021`) — discriminant vs les slugs HTTP origination existants (`meta_500`, `meta_400:138008`). Aucun changement de schéma côté reseller. Migration Alembic `0018`.
 - Observabilité livraison templates WhatsApp : `template_sends` remplit désormais `delivered_at`, `read_at`, `failed_reason`, `billable`, `category`, `pricing_model` (nouveau champ VARCHAR(16), migration `0017`) depuis le webhook Meta entrant. Alimentation fire-and-forget isolée du dispatcher principal. Le statut métier `replied` (posé lors d'un clic Accept/Reject sur le template) est préservé : un `read` tardif ne l'écrase pas. Aucun impact contrat API publique.
 - Table `calls` : 2 nouvelles colonnes internes de traçabilité (`direction` pour préparer l'inbound futur, + variante conversationnelle tracée par appel pour audit). Non exposées dans l'API (pas de projection côté `CallOut`). Migration Alembic `0016`.
