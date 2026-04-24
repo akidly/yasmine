@@ -8,6 +8,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ### Added
 
+- Audit interne des échecs Meta : 3 nouvelles colonnes internes (`calls.meta_error_code`, `calls.meta_error_title`, `calls.meta_error_details`) projetées depuis les webhooks `terminate FAILED` WhatsApp. Le champ `failure_reason` (exposé via `CallOut` et l'event sortant `call.failed`) s'enrichit désormais du code Meta au format `meta_terminate:<code>` (ex. `meta_terminate:138021`) — discriminant vs les slugs HTTP origination existants (`meta_500`, `meta_400:138008`). Aucun changement de schéma côté reseller. Migration Alembic `0018`.
 - Observabilité livraison templates WhatsApp : `template_sends` remplit désormais `delivered_at`, `read_at`, `failed_reason`, `billable`, `category`, `pricing_model` (nouveau champ VARCHAR(16), migration `0017`) depuis le webhook Meta entrant. Alimentation fire-and-forget isolée du dispatcher principal. Le statut métier `replied` (posé lors d'un clic Accept/Reject sur le template) est préservé : un `read` tardif ne l'écrase pas. Aucun impact contrat API publique.
 - Table `calls` : 2 nouvelles colonnes internes de traçabilité (`direction` pour préparer l'inbound futur, + variante conversationnelle tracée par appel pour audit). Non exposées dans l'API (pas de projection côté `CallOut`). Migration Alembic `0016`.
 
@@ -51,6 +52,9 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 - `docs/infrastructure.md` section "Retention & hygiene" reecrite en consequence : le script reste documente comme outil manuel.
 
 ### Fixed
+
+- Statut de rejet client (`REJECTED`) désormais traité correctement par le dispatcher webhook entrant — transition `call_status=failed` + `failure_reason=client_rejected` + event sortant `call.failed` émis (précédemment tombait en metadata `unknown_event_seen`, l'appel restait figé en état intermédiaire).
+- Suppression d'un doublon possible de l'event sortant `call.started` en conditions de course serrée entre la phase d'origination interne et le webhook Meta. Seul le webhook Meta reste source d'émission de cet event (source de vérité unique côté reseller).
 - `.github/workflows/sync-plugin.yml` : `DRY_RUN` fallback corrigé (le ternaire GHA `A && B || C` court-circuitait à `C` quand `B = false`, donc une case `dry_run` décochée en `workflow_dispatch` retombait sur `'true'` via le fallback au lieu de rester `false`). Fix : tester d'abord `github.event_name == 'push'` (toujours truthy string `'true'`), laisser `inputs.dry_run` passer tel quel en `workflow_dispatch`.
 
 ### Added (Lot 4 — CI auto-sync plugin)
