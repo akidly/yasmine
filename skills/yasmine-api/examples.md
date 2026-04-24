@@ -25,11 +25,19 @@ curl -X POST "$BASE/v1/calls" \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_ref": "boutique-casa-01",
-    "purpose": "confirmation",
-    "amount": "249.00",
-    "currency": "MAD",
-    "country": "MA"
+    "merchant_external_id": "boutique-casa-01",
+    "shop_info": {
+      "name": "GlowArt Casa"
+    },
+    "order": {
+      "delivery_address": "12 Rue X, Casablanca",
+      "amount": "249.00",
+      "currency": "MAD"
+    },
+    "country": "MA",
+    "call_params": {
+      "purpose": "confirmation"
+    }
   }'
 ```
 
@@ -71,15 +79,29 @@ curl -X POST "$BASE/v1/calls" \
       "email": "claire@example.com",
       "notes": "VIP, horaires bureau uniquement"
     },
-    "merchant_ref": "boutique-paris-01",
-    "purpose": "relance_paiement",
-    "amount": "49.90",
-    "currency": "EUR",
-    "country": "FR"
+    "merchant_external_id": "boutique-paris-01",
+    "shop_info": {
+      "name": "GlowArt Paris",
+      "shop_sector": "beauté",
+      "return_policy": "retour gratuit sous 14 jours"
+    },
+    "order": {
+      "delivery_address": "25 Av des Champs-Élysées, 75008 Paris",
+      "amount": "49.90",
+      "currency": "EUR",
+      "delivery_method": "express",
+      "delivery_zone": "urban",
+      "source": "web"
+    },
+    "country": "FR",
+    "call_params": {
+      "purpose": "retry",
+      "tone": "friendly"
+    }
   }'
 ```
 
-La `country` bascule automatiquement le serveur vers le profil conversationnel français. Les champs facultatifs `gender`/`email`/`notes` sont persistés côté serveur et réutilisés lors des appels suivants pour le même client (COALESCE stickiness — un POST ultérieur sans ces champs n'écrase pas les valeurs existantes).
+La `country` bascule automatiquement le serveur vers le profil conversationnel français. Les champs facultatifs sont persistés côté serveur et réutilisés lors des appels suivants pour le même `(customer, merchant)` (COALESCE stickiness — un POST ultérieur sans ces champs n'écrase pas les valeurs existantes côté customer + merchant).
 
 ---
 
@@ -97,15 +119,19 @@ curl -X POST "$BASE/v1/calls" \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_ref": "boutique-casa-01",
-    "purpose": "livraison",
-    "amount": "180.00",
-    "currency": "MAD",
+    "merchant_external_id": "boutique-casa-01",
+    "shop_info": {"name": "GlowArt Casa"},
+    "order": {
+      "external_id": "CMD-2026-00789",
+      "delivery_address": "12 Rue X, Casa",
+      "amount": "180.00",
+      "currency": "MAD"
+    },
     "country": "MA",
+    "call_params": {"purpose": "followup_delivery"},
     "metadata": {
-      "order_id": "CMD-2026-00789",
       "invoice_ref": "INV-2026-1042",
-      "source": "shopify",
+      "source_crm": "shopify",
       "custom_tags": ["vip", "repeat_customer"]
     }
   }'
@@ -295,7 +321,7 @@ curl -X POST "$BASE/v1/calls" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $IDEMP" \
-  -d '{ "customer": { "name": "X", "phone_number": "+212612345678" }, "merchant_ref": "x", "purpose": "confirmation", "amount": "100", "currency": "MAD", "country": "MA" }'
+  -d '{ "customer": { "name": "X", "phone_number": "+212612345678" }, "merchant_external_id": "x", "shop_info": {"name": "X Shop"}, "order": {"delivery_address": "Rue X, Casa", "amount": "100", "currency": "MAD"}, "country": "MA", "call_params": {"purpose": "confirmation"} }'
 
 # Si timeout / erreur réseau, retry avec LA MÊME clé + LE MÊME body
 curl -X POST "$BASE/v1/calls" \
@@ -329,11 +355,11 @@ curl -X POST "$BASE/v1/calls" \
       "name": "",
       "phone_number": "+0000000000"
     },
-    "merchant_ref": "ma boutique",
-    "purpose": "test",
-    "amount": "-10",
-    "currency": "mad",
-    "country": "XX"
+    "merchant_external_id": "ma boutique",
+    "shop_info": {"name": ""},
+    "order": {"delivery_address": "", "amount": "-10", "currency": "mad"},
+    "country": "XX",
+    "call_params": {"purpose": "invalid_enum"}
   }'
 ```
 
@@ -350,10 +376,13 @@ Réponse (HTTP **422**) :
   "errors": [
     { "loc": ["body", "customer", "phone_number"], "msg": "Value error, phone_number invalide — format attendu E.164 (ex: +212612345678)", "type": "value_error" },
     { "loc": ["body", "customer", "name"], "msg": "String should have at least 1 character", "type": "string_too_short" },
-    { "loc": ["body", "merchant_ref"], "msg": "String should match pattern '^[a-zA-Z0-9_.-]+$'", "type": "string_pattern_mismatch" },
-    { "loc": ["body", "amount"], "msg": "Decimal input should be greater than 0", "type": "greater_than" },
-    { "loc": ["body", "currency"], "msg": "String should match pattern '^[A-Z]{3}$'", "type": "string_pattern_mismatch" },
-    { "loc": ["body", "country"], "msg": "Input should be 'MA', 'DZ', 'TN' or 'FR'", "type": "literal_error" }
+    { "loc": ["body", "merchant_external_id"], "msg": "String should match pattern '^[a-zA-Z0-9_.-]+$'", "type": "string_pattern_mismatch" },
+    { "loc": ["body", "shop_info", "name"], "msg": "String should have at least 1 character", "type": "string_too_short" },
+    { "loc": ["body", "order", "delivery_address"], "msg": "String should have at least 1 character", "type": "string_too_short" },
+    { "loc": ["body", "order", "amount"], "msg": "Decimal input should be greater than 0", "type": "greater_than" },
+    { "loc": ["body", "order", "currency"], "msg": "Input should be 'MAD','EUR','USD','TND' or 'DZD'", "type": "literal_error" },
+    { "loc": ["body", "country"], "msg": "Input should be 'MA', 'DZ', 'TN' or 'FR'", "type": "literal_error" },
+    { "loc": ["body", "call_params", "purpose"], "msg": "Input should be one of the 5 enum values", "type": "literal_error" }
   ]
 }
 ```

@@ -63,6 +63,7 @@ Certains `type` ajoutent des champs dédiés :
 | `idempotency_key_empty` | 400 | Header `Idempotency-Key` présent mais vide. Doit faire au moins 1 char. |
 | `idempotency_key_too_long` | 400 | Header `Idempotency-Key` > 255 chars. Limite stricte côté serveur. |
 | `idempotency_key_conflict` | 409 | Même `Idempotency-Key` réutilisée avec un body différent dans la fenêtre de 24 h. Générer une nouvelle clé pour une requête différente. Le body original n'est jamais ré-exposé. |
+| `order_external_id_already_exists` | 409 | `POST /v1/calls` avec `order.external_id` déjà utilisé pour ce merchant. Les commandes sont créées par INSERT strict (pas d'upsert) — pour atteindre à nouveau le client sur la même commande, relancer avec une nouvelle `Idempotency-Key` et incrémenter `order.previous_attempts`. Pour créer une commande distincte, utiliser une `external_id` différente. |
 | `api_key_not_found` | 404 | `DELETE /v1/me/api-keys/{key_id}` sur une clé inexistante OU appartenant à un autre reseller (P1-4). Body byte-identique sur les 2 cas — pattern anti-énum P0-2. |
 | `invalid_key_id` | 400 | `DELETE /v1/me/api-keys/{key_id}` avec UUID malformé (P1-4). Se distingue du 404 pour aider le client à diagnostiquer un bug local. |
 | `webhook_url_not_configured` | 400 | `POST /v1/me/webhooks/test` sans webhook actif (P1-2). Configurer d'abord via `POST /v1/me/webhooks`. |
@@ -189,6 +190,31 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
   "request_id": "b3c4d5e6",
   "balance_seconds": 3,
   "required_seconds": 10
+}
+```
+
+### order_external_id_already_exists
+**Status** : 409
+**Causes** :
+- `POST /v1/calls` avec un `order.external_id` déjà utilisé pour le même merchant. Les commandes sont créées en INSERT strict (pas d'upsert) depuis Phase 2-final.
+- Retry d'une commande sans réutiliser la même `Idempotency-Key` (ce qui aurait déclenché un replay de la réponse stockée).
+- Deux services du reseller qui partagent le même pool d'`external_id` sans coordination.
+
+**Remediation** :
+- Pour **retenter sur la commande existante** : soumettre un nouveau POST avec une nouvelle `Idempotency-Key` + incrémenter `order.previous_attempts`. La même `external_id` reste interdite — à l'avenir une route `POST /v1/calls/retry?order_id=...` dédiée est prévue (M5).
+- Pour **créer une commande distincte** : générer une nouvelle `external_id` unique côté reseller.
+- Pour un **retry réseau pur** : garder la **même** `Idempotency-Key` — déclenche un replay (bit-for-bit) sans nouvelle INSERT.
+
+**Example** :
+```json
+{
+  "type": "https://docs.yasmine.akidly.com/errors/order_external_id_already_exists",
+  "title": "Order external_id already exists",
+  "status": 409,
+  "detail": "An order with this external_id already exists for this merchant.",
+  "instance": "/v1/calls",
+  "request_id": "a1b2c3d4",
+  "hint": "To retry reaching the customer on this existing order, submit a new POST with a fresh Idempotency-Key and increment order.previous_attempts. To create a distinct order, use a unique external_id."
 }
 ```
 

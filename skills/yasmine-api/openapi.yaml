@@ -127,13 +127,19 @@ paths:
                   customer:
                     name: "Ahmed Bennani"
                     phone_number: "+212612345678"
-                  merchant_ref: "boutique-casa-01"
-                  purpose: "confirmation"
-                  amount: "249.00"
-                  currency: "MAD"
+                  merchant_external_id: "boutique-casa-01"
+                  shop_info:
+                    name: "GlowArt Casa"
+                  order:
+                    external_id: "CMD-2026-00789"
+                    delivery_address: "12 Rue X, Casablanca"
+                    amount: "249.00"
+                    currency: "MAD"
                   country: "MA"
-              france_with_metadata:
-                summary: Appel France avec metadata + profil client
+                  call_params:
+                    purpose: "confirmation"
+              france_full:
+                summary: Appel France, profil client + shop + order complets
                 value:
                   customer:
                     name: "Claire Dupont"
@@ -141,13 +147,25 @@ paths:
                     gender: "female"
                     email: "claire@example.com"
                     notes: "VIP, horaires bureau uniquement"
-                  merchant_ref: "boutique-paris-01"
-                  purpose: "relance_paiement"
-                  amount: "49.90"
-                  currency: "EUR"
+                  merchant_external_id: "boutique-paris-01"
+                  shop_info:
+                    name: "GlowArt Paris"
+                    shop_sector: "beauté"
+                    tone: "friendly"
+                    return_policy: "retour gratuit sous 14 jours"
+                  order:
+                    external_id: "CMD-2026-00123"
+                    delivery_address: "25 Av des Champs-Élysées, 75008 Paris"
+                    amount: "49.90"
+                    currency: "EUR"
+                    delivery_method: "express"
+                    delivery_zone: "urban"
+                    source: "web"
                   country: "FR"
+                  call_params:
+                    purpose: "retry"
+                    voice_id: "coral"
                   metadata:
-                    order_id: "CMD-2026-00123"
                     invoice_ref: "INV-789"
       responses:
         "201":
@@ -1501,55 +1519,157 @@ components:
             Langue préférée du client (`ar`, `fr`). Propagé à
             `customers.language` + `merchants.default_language`.
           examples: ["ar", "fr"]
+    ShopInfoInput:
+      type: object
+      required: [name]
+      additionalProperties: false
+      description: |
+        Sous-objet `shop_info` (Phase 2-final). Profil boutique : identité,
+        SAV, politiques, commercial. `name` requis, reste optionnel avec
+        stickiness COALESCE côté persistance (valeur renseignée jamais
+        écrasée par un POST ultérieur sans ce champ).
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nom commercial affiché côté agent vocal + dashboard.
+          examples: ["GlowArt Casa"]
+        shop_sector: { type: string, nullable: true, maxLength: 50 }
+        industry: { type: string, nullable: true, maxLength: 32 }
+        active: { type: boolean, nullable: true }
+        logo_url: { type: string, nullable: true, maxLength: 255 }
+        shop_phone_sav: { type: string, nullable: true, maxLength: 30 }
+        shop_email_sav:
+          type: string
+          nullable: true
+          maxLength: 100
+          pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+        shop_whatsapp_sav: { type: string, nullable: true, maxLength: 30 }
+        shop_sav_hours: { type: string, nullable: true, maxLength: 100 }
+        shop_address: { type: string, nullable: true, maxLength: 250 }
+        delivery_policy: { type: string, nullable: true, maxLength: 250 }
+        payment_policy: { type: string, nullable: true, maxLength: 250 }
+        return_policy: { type: string, nullable: true, maxLength: 250 }
+        size_exchange_policy: { type: string, nullable: true, maxLength: 250 }
+        warranty_policy: { type: string, nullable: true, maxLength: 250 }
+        current_promotions: { type: string, nullable: true, maxLength: 250 }
+        loyalty_program: { type: string, nullable: true, maxLength: 250 }
+        faq_free: { type: string, nullable: true, maxLength: 1500 }
+    OrderInput:
+      type: object
+      required: [delivery_address, amount, currency]
+      additionalProperties: false
+      description: |
+        Sous-objet `order` (Phase 2-final). Commande du client : logistique,
+        montants, métadata commerciale. `delivery_address`, `amount`,
+        `currency` requis. `external_id` optionnel — génération fallback
+        côté serveur si absent. **INSERT strict** : un 2e POST avec même
+        `(merchant_id, external_id)` retourne `409 order_external_id_already_exists`.
+      properties:
+        external_id:
+          type: string
+          nullable: true
+          maxLength: 128
+          description: ID commande côté reseller, unique par merchant.
+        delivery_address:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Adresse de livraison complète.
+        items_text:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Résumé lisible des items pour l'agent vocal.
+        amount:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]+)?$"
+          description: Montant total en devise indiquée (string, précision Decimal).
+          examples: ["249.00"]
+        currency:
+          type: string
+          enum: [MAD, EUR, USD, TND, DZD]
+        order_date: { type: string, nullable: true, format: date }
+        subtotal: { type: string, nullable: true }
+        shipping_cost: { type: string, nullable: true }
+        discount: { type: string, nullable: true }
+        taxes: { type: string, nullable: true }
+        delivery_method:
+          type: string
+          nullable: true
+          enum: [standard, express, pickup]
+        delivery_zone:
+          type: string
+          nullable: true
+          enum: [urban, suburban, rural]
+        estimated_delivery_date: { type: string, nullable: true, format: date }
+        previous_attempts: { type: integer, nullable: true, minimum: 0, maximum: 100 }
+        order_notes: { type: string, nullable: true, maxLength: 300 }
+        source:
+          type: string
+          nullable: true
+          enum: [web, pos, ads, other]
+        promo_code: { type: string, nullable: true, maxLength: 50 }
+    CallParamsInput:
+      type: object
+      required: [purpose]
+      additionalProperties: false
+      description: |
+        Sous-objet `call_params` (Phase 2-final). Paramètres de l'appel :
+        intention, tone, durée max, voix. `purpose` requis (enum interne).
+      properties:
+        purpose:
+          type: string
+          enum: [confirmation, retry, followup_delivery, satisfaction, custom]
+          description: Intention métier de l'appel (stockée dans calls.metadata.purpose_hint).
+        tone:
+          type: string
+          nullable: true
+          enum: [formal, friendly, default]
+        max_call_duration_seconds:
+          type: integer
+          nullable: true
+          minimum: 30
+          maximum: 600
+        voice_id: { type: string, nullable: true, maxLength: 32 }
     CallCreate:
       type: object
-      required: [customer, merchant_ref, purpose, amount, currency]
+      required: [customer, merchant_external_id, shop_info, order, country, call_params]
       additionalProperties: false
+      description: |
+        Payload `POST /v1/calls` — Phase 2-final structure complète nested.
+        BREAKING vs précédentes versions : `merchant_ref` renommé
+        `merchant_external_id`, `amount`/`currency` déplacés dans `order`,
+        `purpose` déplacé dans `call_params`.
       properties:
         customer:
           $ref: "#/components/schemas/CustomerInput"
-        merchant_ref:
+        merchant_external_id:
           type: string
           minLength: 1
           maxLength: 128
           pattern: "^[a-zA-Z0-9_.-]+$"
           description: |
-            Slug stable identifiant la boutique côté reseller. Utilisé
-            pour l'upsert merchant. Caractères autorisés : `[a-zA-Z0-9_.-]`.
+            Slug stable identifiant la boutique côté reseller. Utilisé pour
+            l'upsert merchant. Caractères autorisés : `[a-zA-Z0-9_.-]`.
+            Remplace `merchant_ref` des versions précédentes.
           examples: ["boutique-paris-01"]
-        purpose:
-          type: string
-          minLength: 1
-          maxLength: 64
-          description: |
-            Libellé métier libre décrivant l'intention de l'appel.
-            Stocké dans `calls.metadata.purpose_hint` côté serveur.
-          examples: [confirmation, relance_paiement, livraison, annulation]
-        amount:
-          type: string
-          pattern: "^[0-9]+(\\.[0-9]+)?$"
-          description: |
-            Montant en devise indiquée, sérialisé en string pour
-            préserver la précision décimale. Contrainte serveur :
-            `0 < amount <= 1000000`.
-          examples: ["249.00"]
-        currency:
-          type: string
-          pattern: "^[A-Z]{3}$"
-          description: |
-            Code ISO-4217 sur 3 lettres majuscules (format seul, pas de
-            validation contre la liste des devises réelles).
-          examples: [MAD, EUR, USD]
+        shop_info:
+          $ref: "#/components/schemas/ShopInfoInput"
+        order:
+          $ref: "#/components/schemas/OrderInput"
         country:
           type: string
           enum: [MA, DZ, TN, FR]
-          default: MA
           description: |
-            Code pays ISO 3166-1 alpha-2 du client à appeler. Détermine
-            la langue et le contexte culturel utilisés par l'IA. Les
-            profils conversationnels internes sont choisis côté serveur —
-            transparent pour le reseller.
+            Code pays ISO 3166-1 alpha-2 du client à appeler. Détermine la
+            langue et le contexte culturel utilisés par l'IA. Les profils
+            conversationnels internes sont choisis côté serveur — transparent
+            pour le reseller.
           examples: [MA]
+        call_params:
+          $ref: "#/components/schemas/CallParamsInput"
         metadata:
           type: object
           nullable: true
@@ -2370,10 +2490,10 @@ components:
     # -----------------------------------------------------------------------
     MerchantCreateInput:
       type: object
-      required: [external_ref, name]
+      required: [external_id, name]
       additionalProperties: false
       properties:
-        external_ref: { type: string }
+        external_id: { type: string }
         name: { type: string }
         country: { type: string, enum: [MA, DZ, TN, FR] }
         default_language: { type: string, enum: [ar, fr, en] }
@@ -2382,7 +2502,6 @@ components:
         contact_phone_e164: { type: string }
         contact_whatsapp_e164: { type: string }
         website_url: { type: string, format: uri }
-        address: { type: string }
     MerchantPatchInput:
       type: object
       additionalProperties: false
@@ -2395,12 +2514,11 @@ components:
         contact_phone_e164: { type: string }
         contact_whatsapp_e164: { type: string }
         website_url: { type: string, format: uri }
-        address: { type: string }
     Merchant:
       type: object
       properties:
         id: { type: string, format: uuid }
-        external_ref: { type: string }
+        external_id: { type: string }
         name: { type: string }
         country: { type: string, enum: [MA, DZ, TN, FR], nullable: true }
         default_language: { type: string, nullable: true }
@@ -2409,7 +2527,6 @@ components:
         contact_phone_e164: { type: string, nullable: true }
         contact_whatsapp_e164: { type: string, nullable: true }
         website_url: { type: string, format: uri, nullable: true }
-        address: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
     MerchantList:
       allOf:

@@ -58,15 +58,23 @@ curl -X POST https://api.yasmine.akidly.com/v1/calls \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_ref": "ma-boutique-test",
-    "purpose": "confirmation",
-    "amount": "249.00",
-    "currency": "MAD",
-    "country": "MA"
+    "merchant_external_id": "ma-boutique-test",
+    "shop_info": {
+      "name": "Ma Boutique Test"
+    },
+    "order": {
+      "delivery_address": "12 Rue du Test, Casablanca",
+      "amount": "249.00",
+      "currency": "MAD"
+    },
+    "country": "MA",
+    "call_params": {
+      "purpose": "confirmation"
+    }
   }'
 ```
 
-Le sous-objet `customer` accepte également des champs facultatifs (`gender`, `email`, `notes`, `language`) pour enrichir la fiche client. La liste complète des champs est dans le schéma `CustomerInput` de [`docs/openapi.yaml`](https://docs.yasmine.akidly.com/openapi.yaml).
+Les sous-objets `customer`, `shop_info`, `order`, `call_params` acceptent d'autres champs facultatifs (genre client, politiques SAV, delivery_method, voice_id, etc.). La liste complète et leurs contraintes sont dans `docs/openapi.yaml` (schémas `CustomerInput`, `ShopInfoInput`, `OrderInput`, `CallParamsInput`).
 
 Réponse attendue (HTTP **201 Created**) :
 
@@ -93,7 +101,7 @@ Header `Location: /v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862` en prime.
 
 - **`id`** : identifiant UUID de l'appel. À conserver pour le retrouver plus tard.
 - **`status`** : `queued` au moment du 201. L'appel est asynchrone — l'agent va composer, sonner, converser, puis raccrocher (typiquement ~60 secondes). Les statuts traversés : `queued → dialing → ringing → in_progress → ended` (ou `failed`).
-- **`merchant_id`** : le merchant a été upserté depuis `merchant_ref`. Si `merchant_ref` existait déjà, c'est le même ID — sinon un nouveau merchant a été créé.
+- **`merchant_id`** : le merchant a été upserté depuis `merchant_external_id`. Si cet identifiant existait déjà pour votre reseller, c'est le même ID — sinon un nouveau merchant a été créé.
 - **`customer_phone_masked`** : **jamais le numéro brut** dans nos réponses (principe anti-BOPLA). Le numéro complet reste disponible côté opérations pour debug.
 - **`amount`** est une **string** pour préserver la précision décimale (évite les pièges de `Number` en JavaScript).
 
@@ -147,7 +155,7 @@ Toutes les erreurs `/v1/*` sont renvoyées au format RFC 7807 `application/probl
   "request_id": "5312821c",
   "errors": [
     { "loc": ["body", "customer", "phone_number"], "msg": "Value error, phone_number invalide — format attendu E.164 (ex: +212612345678)", "type": "value_error" },
-    { "loc": ["body", "amount"], "msg": "Field required", "type": "missing" }
+    { "loc": ["body", "order", "amount"], "msg": "Field required", "type": "missing" }
   ]
 }
 ```

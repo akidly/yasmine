@@ -6,6 +6,22 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Changed — Merchants + orders enrichis, payload POST /v1/calls restructuré (Phase 2-final)
+
+- **BREAKING payload `POST /v1/calls`** : restructuration complète en sous-objets nested.
+  - `merchant_ref` racine → `merchant_external_id` racine (renommage).
+  - `amount` + `currency` racine → `order.amount` + `order.currency` (déplacement).
+  - `purpose` racine → `call_params.purpose` (déplacement).
+  - Nouveaux sous-blocs : `shop_info: {...}` (18 champs, `name` requis), `order: {...}` (14 champs, `delivery_address` + `amount` + `currency` requis), `call_params: {...}` (4 champs, `purpose` requis).
+  - Sous-bloc `customer` inchangé depuis Phase 2A.
+  - Un payload plat legacy renvoie `422` avec rejets `extra_forbidden` sur les anciens champs et `missing` sur les nouveaux sous-blocs.
+- **+20 colonnes `merchants`** : profil (`shop_sector`, `industry`, `active`, `logo_url`), SAV (`shop_phone_sav`, `shop_email_sav`, `shop_whatsapp_sav`, `shop_sav_hours`, `shop_address`), politiques (`delivery_policy`, `payment_policy`, `return_policy`, `size_exchange_policy`, `warranty_policy`), commercial (`current_promotions`, `loyalty_program`, `faq_free`), config agent (`tone`, `max_call_duration_seconds`, `voice_id`). CHECK `merchants_tone_check` sur `tone IN ('formal','friendly','default')`. Stickiness COALESCE élargie aux 20 nouvelles colonnes + `name` (une valeur renseignée n'est plus écrasée par un POST ultérieur qui ne la fournit pas).
+- **+14 colonnes `orders`** : `items_text`, `order_date`, `subtotal`, `shipping_cost`, `discount`, `taxes`, `delivery_method` (CHECK `standard`/`express`/`pickup`), `delivery_zone` (CHECK `urban`/`suburban`/`rural`), `delivery_address` (**NOT NULL**), `estimated_delivery_date`, `previous_attempts`, `order_notes`, `source` (CHECK `web`/`pos`/`ads`/`other`), `promo_code`.
+- **Renommages DB** : `merchants.external_ref` → `merchants.external_id`, `orders.external_ref` → `orders.external_id`. UniqueConstraints renommées en `uq_merchants_reseller_external_id` et `uq_orders_merchant_external_id`. Cohérence publique : `docs/webhooks.md` + `docs/openapi.yaml` reflètent le nouveau nom dans les payloads cibles.
+- **Suppression DB** : `merchants.address` (remplacé sémantiquement par `merchants.shop_address` VARCHAR(250) dans la nouvelle fiche SAV).
+- **Orders = INSERT strict** (plus d'upsert). Un 2e POST avec même `(merchant_id, order.external_id)` retourne `409 order_external_id_already_exists` (nouveau slug RFC 7807, documenté dans `docs/errors.md` + `docs/site/errors.html`). Retry sur la commande existante = nouvelle `Idempotency-Key` + `order.previous_attempts` incrémenté.
+- Migration Alembic `0015`. Validation stricte Pydantic : Literal enums (currency MAD/EUR/USD/TND/DZD, purpose enum PG `call_purpose`, tone, delivery_method/zone/source), regex country `^[A-Z]{2}$`, dates ISO YYYY-MM-DD.
+
 ### Changed — Meta webhook enrichit customers (Phase 2A-bis)
 
 - Webhook Meta `call_permission_reply` alimente désormais `customers.whatsapp_profile_name` (via `contacts[].profile.name`) et `customers.meta_user_id` (via `messages[].from_user_id`) — colonnes posées vides en Phase 2A, activation en fire-and-forget isolé du dispatcher principal. COALESCE stickiness : valeurs déjà renseignées sont préservées. UPDATE-only : `wa_id` inconnu → log warning sans crash. Aucun impact contrat API publique.
