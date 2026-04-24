@@ -123,15 +123,10 @@ X-Yasmine-Event-Id: evt_01HTYE9Q4QK3M1B5X7Z2V8W6RF
   "created_at": "2026-04-19T14:40:00.123Z",
   "livemode": true,
   "data": {
-    "object": {
-      "id": "call_01HTYE9...",
-      "status": "ended",
-      "result": "CONFIRMED",
-      "duration_s": 37,
-      "billable_s": 37,
-      "order": { "id": "ord_...", "external_id": "CMD-2026-001" },
-      "merchant": { "id": "mer_...", "external_id": "boutique-x" }
-    }
+    "call_id": "d5a97d2b-1f3a-4c8b-9d51-2c3a4b5c6d7e",
+    "result": "CONFIRMED",
+    "duration_s": 37,
+    "billable_s": 37
   }
 }
 ```
@@ -148,7 +143,7 @@ X-Yasmine-Event-Id: evt_01HTYE9Q4QK3M1B5X7Z2V8W6RF
 | `type` | `string` | Nom de l'event (cf catalogue Phase 2). |
 | `created_at` | `string` (ISO 8601) | Date d'émission côté Yasmine. |
 | `livemode` | `boolean` | `true` en prod. Sandbox séparé = dette future (P1). |
-| `data.object` | `object` | Ressource principale concernée par l'event. |
+| `data` | `object` | Contenu spécifique au `type` de l'event — voir §7 Catalogue d'événements pour le schéma exact des champs par type. |
 
 L'ordre d'arrivée **n'est pas garanti** (retries réseau). Utilise `created_at` + `id` pour ordonner côté reseller.
 
@@ -164,7 +159,7 @@ Décision produit : 3 tentatives, cadence alignée Stripe/Twilio.
 | 2 | +30 s | 10 s |
 | 3 | +5 min | 10 s |
 
-Après **3 échecs consécutifs**, l'event est abandonné (`error='max_retries_exceeded'` dans `webhook_deliveries`). Un endpoint de replay manuel est prévu en P2.
+Après **3 échecs consécutifs**, l'event est abandonné. Le champ `error` de la dernière ligne `webhook_deliveries` reflète la raison du dernier échec — slugs possibles : `timeout`, `connect_error:*`, `http_error:*`, `unknown:*` (le suffixe après `:` détaille le type d'exception ou le message d'erreur, tronqué à 200 caractères). Un endpoint de replay manuel est prévu en P2.
 
 Un event est considéré **livré** dès qu'un `2xx` est reçu. Tout `3xx`, `4xx`, `5xx`, timeout, ou erreur DNS/TLS = échec → retry.
 

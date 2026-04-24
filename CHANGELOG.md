@@ -12,6 +12,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ### Added
 
+- Header `X-Yasmine-Event` ajouté aux requêtes HTTP des webhooks sortants (dispatcher principal + endpoint de test). Permet aux resellers de router/dédupliquer les events sans avoir à parser le body JSON. Conforme à ce qui était documenté dans `docs/webhooks.md`.
 - `docs/webhooks.md` est désormais synchronisé vers le plugin `akidly/yasmine` au push master.
 - Audit interne des échecs Meta : 3 nouvelles colonnes internes (`calls.meta_error_code`, `calls.meta_error_title`, `calls.meta_error_details`) projetées depuis les webhooks `terminate FAILED` WhatsApp. Le champ `failure_reason` (exposé via `CallOut` et l'event sortant `call.failed`) s'enrichit désormais du code Meta au format `meta_terminate:<code>` (ex. `meta_terminate:138021`) — discriminant vs les slugs HTTP origination existants (`meta_500`, `meta_400:138008`). Aucun changement de schéma côté reseller. Migration Alembic `0018`.
 - Observabilité livraison templates WhatsApp : `template_sends` remplit désormais `delivered_at`, `read_at`, `failed_reason`, `billable`, `category`, `pricing_model` (nouveau champ VARCHAR(16), migration `0017`) depuis le webhook Meta entrant. Alimentation fire-and-forget isolée du dispatcher principal. Le statut métier `replied` (posé lors d'un clic Accept/Reject sur le template) est préservé : un `read` tardif ne l'écrase pas. Aucun impact contrat API publique.
@@ -58,6 +59,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ### Fixed
 
+- `docs/webhooks.md` : alignement sur le code après détection de drifts contractuels par audit indépendant. Suppression du wrapper `data.object` dans les exemples §2 et §3 (le code émet `data` à plat conformément au catalogue §7). Reformulation de la mention `error='max_retries_exceeded'` en §4 par l'énumération des slugs réels effectivement écrits en base (`timeout`, `connect_error:*`, `http_error:*`, `unknown:*`).
 - Sérialisation correcte des notifications de progression d'appel (RINGING, ACCEPTED) côté webhook entrant : un verrou par appel est maintenant pris à chaque dispatch, identique au comportement déjà en place pour les notifications majeures (`connect`, `terminate`, `reject`). Avant ce fix, deux notifications de progression concurrentes pouvaient s'exécuter en parallèle sans coordination, ouvrant une fenêtre de race conditions sur les transitions d'état d'appel.
 - Statut de rejet client (`REJECTED`) désormais traité correctement par le dispatcher webhook entrant — transition `call_status=failed` + `failure_reason=client_rejected` + event sortant `call.failed` émis (précédemment tombait en metadata `unknown_event_seen`, l'appel restait figé en état intermédiaire).
 - Suppression d'un doublon possible de l'event sortant `call.started` en conditions de course serrée entre la phase d'origination interne et le webhook Meta. Seul le webhook Meta reste source d'émission de cet event (source de vérité unique côté reseller).
