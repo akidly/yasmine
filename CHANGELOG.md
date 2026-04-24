@@ -6,6 +6,10 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Changed — Meta webhook enrichit customers (Phase 2A-bis)
+
+- Webhook Meta `call_permission_reply` alimente désormais `customers.whatsapp_profile_name` (via `contacts[].profile.name`) et `customers.meta_user_id` (via `messages[].from_user_id`) — colonnes posées vides en Phase 2A, activation en fire-and-forget isolé du dispatcher principal. COALESCE stickiness : valeurs déjà renseignées sont préservées. UPDATE-only : `wa_id` inconnu → log warning sans crash. Aucun impact contrat API publique.
+
 ### Added — Customer profile fields (Phase 2A)
 
 - **BREAKING** : `POST /v1/calls` attend désormais un sous-objet `customer: {name, phone_number, ...}` à la place de `customer_name` et `phone_number` plats à la racine. Le nouveau schéma `CustomerInput` est documenté dans `docs/openapi.yaml`. Les champs historiques à la racine sont supprimés — un payload legacy renvoie `422 extra_forbidden` sur `customer_name`/`phone_number` et `missing` sur `customer`.
