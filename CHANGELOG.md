@@ -8,6 +8,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ### Added
 
+- Observabilité livraison templates WhatsApp : `template_sends` remplit désormais `delivered_at`, `read_at`, `failed_reason`, `billable`, `category`, `pricing_model` (nouveau champ VARCHAR(16), migration `0017`) depuis le webhook Meta entrant. Alimentation fire-and-forget isolée du dispatcher principal. Le statut métier `replied` (posé lors d'un clic Accept/Reject sur le template) est préservé : un `read` tardif ne l'écrase pas. Aucun impact contrat API publique.
 - Table `calls` : 2 nouvelles colonnes internes de traçabilité (`direction` pour préparer l'inbound futur, + variante conversationnelle tracée par appel pour audit). Non exposées dans l'API (pas de projection côté `CallOut`). Migration Alembic `0016`.
 
 ### Changed — Merchants + orders enrichis, payload POST /v1/calls restructuré (Phase 2-final)
