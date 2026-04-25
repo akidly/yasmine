@@ -6,7 +6,8 @@ Guide pour configurer et recevoir les notifications sortantes Yasmine.
 
 > **Statut M3.6 C6** :
 > - **Phase 1 livrée (2026-04-20)** : `POST/GET/DELETE /v1/me/webhooks` self-service. Un reseller peut enregistrer son endpoint et récupérer son secret HMAC.
-> - **Phase 2 livrée (2026-04-20)** : émission réelle des events (10 events `call.*`) via dispatcher async + retry 3× (0s / 30s / 5min), timeout 10 s, SSRF re-check à chaque POST.
+> - **Phase 2 livrée (2026-04-20)** : émission réelle des events (initialement 11 events `call.*`) via dispatcher async + retry 3× (0s / 30s / 5min), timeout 10 s, SSRF re-check à chaque POST.
+> - **Phase 3 livrée (2026-04-26)** : enrichissement à **17 events `call.*`** — ajout du rail TEMPLATE (cycle de vie du message WhatsApp), distinction `permission_revoked` (manuelle) / `permission_auto_revoked` (système) / `permission_refused` (clic Refuser), nouveau `service_unavailable` qui isole les problèmes système Yasmine du `call.failed` générique.
 
 ---
 
@@ -342,14 +343,14 @@ except UniqueViolation:
 
 ---
 
-## 7. Catalogue d'événements (live depuis Phase 2)
+## 7. Catalogue d'événements (live depuis Phase 2, enrichi en Phase 3)
 
-10 events. Payloads `data.*` ci-dessous. Envelope standard cf §3.
+**17 events `call.*`**. Organisés en 3 rails : DEMANDE (5), TEMPLATE (4 — Phase 3), APPEL (8 — dont service_unavailable). Plus l'event utilitaire `webhook.test` (cf §4 testing). Payloads `data.*` ci-dessous. Envelope standard cf §3.
 
-### Rail DEMANDE (vie du template WhatsApp)
+### Rail DEMANDE (vie de l'autorisation utilisateur)
 
 #### `call.request.accepted`
-Déclenché quand l'utilisateur a cliqué **Autoriser** sur le template `call_permission_request`. La permission est acquise, l'appel va partir.
+Déclenché quand l'utilisateur a cliqué **Autoriser** sur le bouton du template d'autorisation reçu par WhatsApp. La permission est acquise, l'appel va partir.
 
 ```json
 {
@@ -362,7 +363,7 @@ Déclenché quand l'utilisateur a cliqué **Autoriser** sur le template `call_pe
 - `expires_at` : ISO 8601 Z si `temporary`, `null` si `permanent`.
 
 #### `call.request.refused`
-L'utilisateur a cliqué **Ne pas autoriser**. Aucune facturation. Aucun event rail APPEL ne suivra.
+L'utilisateur a cliqué **Ne pas autoriser** sur le bouton du template. Aucune facturation. Aucun event rail APPEL ne suivra.
 
 ```json
 { "call_id": "d5a97d2b-..." }
@@ -379,7 +380,7 @@ Timeout template (180 s par défaut) sans réponse utilisateur. Aucun event rail
 ```
 
 #### `call.request.quota_blocked`
-Yasmine a bloqué l'envoi template pour protéger le compte Meta (guards proactifs §4.2 / §4.3).
+Yasmine a bloqué l'envoi du template d'autorisation pour protéger la qualité du canal WhatsApp (guards proactifs §4.2 / §4.3).
 
 ```json
 {
@@ -389,9 +390,9 @@ Yasmine a bloqué l'envoi template pour protéger le compte Meta (guards proacti
 }
 ```
 - `limit_type` parmi :
-  - `1_per_24h` : 1 `call_permission_request` déjà envoyé au même `wa_id` dans les 24 h.
+  - `1_per_24h` : 1 demande d'autorisation déjà envoyée au même `wa_id` dans les 24 h.
   - `2_per_7d` : 2 dans les 7 j glissants.
-  - `4_no_answer_revoked` : 4 `NO_ANSWER` consécutifs → Yasmine anticipe la révocation auto côté Meta.
+  - `4_no_answer_revoked` : 4 `NO_ANSWER` consécutifs → Yasmine anticipe la révocation système.
 
 **Contrainte privacy (M3.6 §1.0 P7)** : ce payload ne leak jamais quel marchand a consommé le quota, ni l'énumération des calls précédents. C'est une info interne Yasmine. Si le reseller demande pourquoi, la réponse est générique : « ce client n'a pas autorisé les appels automatisés sur notre réseau pour le moment ».
 
@@ -407,10 +408,86 @@ Cas spécial : l'utilisateur a cliqué **Autoriser** APRÈS que le rail DEMANDE 
 }
 ```
 
+#### `call.request.permission_revoked`
+**Phase 3 (2026-04-26)**. Le client a révoqué manuellement l'autorisation depuis les paramètres WhatsApp (chat info → autorisations d'appel) — pas via un clic sur un template Yasmine. Pas de `call_id` car l'action n'est pas liée à un appel précis. Permet au reseller d'arrêter de tenter des appels sur ce client tant qu'il n'a pas re-consenti.
+
+```json
+{
+  "wa_id_masked": "wa_8b6832c463e5",
+  "at": "2026-04-26T10:00:00.123456Z"
+}
+```
+- `wa_id_masked` : identifiant WhatsApp anonymisé (hash stable, pas de PII).
+- `at` : ISO 8601 Z, moment de la révocation côté Yasmine.
+
+**Note** : si plusieurs resellers ont récemment contacté ce client, seul le dernier reseller actif est notifié (résolution heuristique via dernier envoi de template).
+
+#### `call.request.permission_auto_revoked`
+**Phase 3 (2026-04-26)**. La plateforme WhatsApp a révoqué automatiquement l'autorisation du client après 4 appels sans réponse consécutifs. Yasmine reçoit ce signal du système — la prochaine tentative passera obligatoirement par une nouvelle demande d'autorisation. Pas de `call_id`.
+
+```json
+{
+  "wa_id_masked": "wa_8b6832c463e5",
+  "at": "2026-04-26T10:00:00.123456Z"
+}
+```
+
+Distinct de `permission_revoked` (action manuelle utilisateur). Sémantiquement plus dur : le client a probablement perdu confiance ou n'utilise plus WhatsApp activement.
+
+### Rail TEMPLATE (vie du message d'autorisation WhatsApp)
+
+**Nouveau Phase 3 (2026-04-26)**. Permet au reseller de suivre la chaîne de livraison du message d'autorisation envoyé au client, depuis l'expédition jusqu'à la lecture. Utile pour comprendre où en est le client avant de prendre des décisions (annulation prématurée d'une commande, relance manuelle, etc.).
+
+Émission progressive : un template envoyé à un client en ligne déclenchera typiquement `template_sent` → `template_delivered` → `template_read` en quelques secondes, puis `request.accepted` ou `request.refused` selon le clic.
+
+#### `call.request.template_sent`
+Yasmine vient d'envoyer le message d'autorisation au client via WhatsApp. Confirmation d'expédition côté plateforme.
+
+```json
+{
+  "call_id": "d5a97d2b-...",
+  "at": "2026-04-26T10:00:00.123456Z"
+}
+```
+
+#### `call.request.template_delivered`
+Le téléphone du client a reçu le message (livraison réseau confirmée par la plateforme). Le client n'a pas encore ouvert WhatsApp.
+
+```json
+{
+  "call_id": "d5a97d2b-...",
+  "at": "2026-04-26T10:00:02.456789Z"
+}
+```
+
+#### `call.request.template_read`
+Le client a ouvert le chat dans WhatsApp et a vu le message. Pas encore cliqué sur les boutons. Bonne indication d'attente côté reseller : le client est probablement actif.
+
+```json
+{
+  "call_id": "d5a97d2b-...",
+  "at": "2026-04-26T10:00:15.789012Z"
+}
+```
+
+#### `call.request.template_delivery_failed`
+La plateforme WhatsApp signale qu'elle n'a pas pu livrer le message au client : numéro pas inscrit sur WhatsApp, version trop ancienne, conditions d'utilisation non acceptées, ou opt-out marketing utilisateur. Distinct des problèmes côté Yasmine (cf `service_unavailable` ci-dessous).
+
+```json
+{
+  "call_id": "d5a97d2b-...",
+  "at": "2026-04-26T10:01:00.000000Z",
+  "reason": "delivery_unavailable"
+}
+```
+- `reason` parmi : `delivery_unavailable` (cas standard), `unknown_error` (cause non parsable côté Yasmine).
+
+Aucun event rail APPEL ne suivra. Le reseller peut basculer sur un autre canal (SMS classique, appel manuel) ou désactiver les notifications pour ce client.
+
 ### Rail APPEL (vie de l'appel téléphonique)
 
 #### `call.started`
-Transition `call_status → dialing`. Meta a accepté le POST `/calls` SDP offer, l'appel est en cours de composition.
+Transition `call_status → dialing`. La plateforme a accepté la requête d'appel, la composition est en cours.
 
 ```json
 { "call_id": "d5a97d2b-..." }
@@ -445,7 +522,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 }
 ```
 - `result` parmi `CONFIRMED`, `CANCELLED`, `NO_ANSWER`, `VOICEMAIL`, `BUSY`, `UNCLEAR`, `FAILED`.
-- `duration_s` : durée totale de l'appel côté Meta.
+- `duration_s` : durée totale de l'appel côté plateforme.
 - `billable_s` : secondes décomptées du solde reseller.
 
 #### `call.cancelled`
@@ -466,33 +543,74 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 **Pas d'event ré-émis** si le cancel est idempotent (appel déjà terminal au moment de la requête).
 
 #### `call.failed`
-Transition `call_status → failed`. Échec infra, **aucune facturation**.
+Transition `call_status → failed`. Échec infra côté plateforme ou côté client (téléphone pas WhatsApp, opt-out, refus avant accept). **Aucune facturation**.
 
 ```json
 {
   "call_id": "d5a97d2b-...",
-  "failure_reason": "meta_500"
+  "failure_reason": "meta_400:131030"
 }
 ```
 - `failure_reason` parmi (non exhaustif) :
-  - `client_rejected` : client a `reject`é avant d'accepter (webhook Meta).
-  - `meta_<status>[:<code>]` : erreur Meta (ex. `meta_500`, `meta_400:138008`).
+  - `client_rejected` : client a refusé avant d'accepter l'appel (webhook plateforme).
+  - `meta_<status>[:<code>]` : erreur côté plateforme avec code spécifique (ex. `meta_400:131030`, `meta_500`). **Phase 3 (2026-04-26)** : le code numérique est désormais propagé systématiquement quand disponible — auparavant le slug était `meta_<status>` seul, le code étant uniquement visible en logs internes.
   - `run_origination_unexpected:<ExcType>` : crash non-prévu dans le handler origination.
-  - `resumed_after_restart` : call marqué échoué au reclaim lifespan (process a redémarré pendant que ce call était en cours).
-  - `janitor_projection` : le janitor a réconcilié un état d'échec via un GET Meta.
+  - `resumed_after_restart` : call marqué échoué au redémarrage (process a redémarré pendant que ce call était en cours).
+  - `janitor_projection` : le janitor a réconcilié un état d'échec via un poll plateforme.
+
+**Phase 3** : pour les codes liés à un problème système Yasmine (compte bloqué, template paused, rate limit Yasmine, etc.), Yasmine ne dispatche plus `call.failed` mais le nouveau `call.request.service_unavailable` (cf ci-dessous) — pour que le reseller distingue clairement un échec définitif côté client d'un problème transitoire côté Yasmine.
+
+### Service indisponible (Phase 3, 2026-04-26)
+
+#### `call.request.service_unavailable`
+Yasmine a rencontré un problème côté son système (compte WhatsApp momentanément bloqué, template en révision, saturation passagère, token à renouveler, etc.). Distinct de `call.failed` (échec définitif côté client). Le reseller peut retenter après le délai suggéré.
+
+```json
+{
+  "call_id": "d5a97d2b-...",
+  "reason": "service_temporarily_unavailable",
+  "retry_after_hint_minutes": 60
+}
+```
+- `reason` parmi :
+  - `service_temporarily_unavailable` : problème système Yasmine (compte / template / token).
+  - `rate_limit_or_throughput` : saturation passagère (rate limit, throughput).
+- `retry_after_hint_minutes` : délai suggéré avant retry, en minutes (entier). Quelques exemples :
+  - `1` à `5` : saturation passagère, retry rapide possible.
+  - `60` : problème système modéré (token à renouveler, etc.).
+  - `240` à `1440` : problème lourd (compte bloqué, template à corriger côté Yasmine), retry après plusieurs heures voire 24 h.
+
+**Recommandation reseller** : implémenter un backoff exponentiel borné par `retry_after_hint_minutes`. Ne pas spammer le client avec des retentatives immédiates. Si le `retry_after_hint_minutes` est élevé (≥ 60), considérer une notification interne (ops Yasmine alerté, logs du reseller à surveiller).
+
+Le même event peut être dispatché aussi bien au moment de l'envoi (échec immédiat côté plateforme avec un code système) qu'après livraison (la plateforme rejette tardivement le message pour une raison côté Yasmine — vu en prod 2026-04-25 lors d'un blocage temporaire du compte business).
 
 ---
 
 ## 8. Règle d'ordonnancement
 
-Si le rail DEMANDE termine en échec (`call.request.{refused,expired,quota_blocked}`), **aucun event** du rail APPEL ne sera émis — la demande ne s'est jamais traduite en POST `/calls` Meta. Respecté structurellement côté Yasmine.
+### Cycle complet typique d'un appel réussi
+```
+call.request.template_sent
+  → call.request.template_delivered
+    → call.request.template_read
+      → call.request.accepted
+        → call.started
+          → call.ringing
+            → call.connected
+              → call.ended (result=CONFIRMED|CANCELLED|...)
+```
+Les events du rail TEMPLATE (`template_sent` / `template_delivered` / `template_read`) sont émis progressivement selon les signaux de la plateforme WhatsApp. Le `template_delivered` peut arriver collapsé avec `template_read` si le client est déjà dans le chat ouvert.
 
-**Distinction `call.cancelled` vs `call.ended` vs `call.failed`** :
-- `call.ended` = l'appel s'est terminé naturellement (client a raccroché, IA a conclu, timeout normal Meta). `result` défini (CONFIRMED/CANCELLED/NO_ANSWER/...).
+### Si le rail DEMANDE termine en échec
+Si le rail DEMANDE termine en échec (`call.request.{refused,expired,quota_blocked,permission_revoked,permission_auto_revoked,template_delivery_failed,service_unavailable}`), **aucun event** du rail APPEL ne sera émis — la demande ne s'est jamais traduite en composition d'appel. Respecté structurellement côté Yasmine.
+
+### Distinction `call.cancelled` vs `call.ended` vs `call.failed` vs `service_unavailable`
+- `call.ended` = l'appel s'est terminé naturellement (client a raccroché, IA a conclu, timeout normal). `result` défini (CONFIRMED/CANCELLED/NO_ANSWER/...).
 - `call.cancelled` = le reseller a explicitement appelé `POST /v1/calls/{id}/cancel`. Toujours volontaire côté Yasmine.
-- `call.failed` = échec infra (Meta 5xx, reclaim lifespan, projection janitor, crash origination). Aucune facturation.
+- `call.failed` = échec côté plateforme ou côté client (5xx réseau, reclaim lifespan, projection janitor, crash origination, refus client avant accept). Aucune facturation.
+- `call.request.service_unavailable` = problème transitoire côté Yasmine (compte / template / saturation). Aucune facturation. Distinct de `call.failed` pour aider le reseller à savoir s'il peut retenter ou non.
 
-Un call ne peut émettre **qu'un seul** de ces 3 events — ils sont mutuellement exclusifs (états terminaux distincts de `call_status`).
+Un call ne peut émettre **qu'un seul** de ces 4 events — ils sont mutuellement exclusifs (états terminaux distincts).
 
 ---
 

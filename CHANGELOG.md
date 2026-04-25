@@ -6,9 +6,23 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Added
+
+- **6 nouveaux events sortants** sur le cycle de vie de l'autorisation WhatsApp, pour que le reseller suive précisément où en est son client avant de prendre des décisions (annulation prématurée d'une commande, relance manuelle, etc.) :
+  - **Rail TEMPLATE** (vie du message d'autorisation) : `call.request.template_sent` (message expédié), `call.request.template_delivered` (téléphone client a reçu), `call.request.template_read` (client a ouvert le message), `call.request.template_delivery_failed` (livraison impossible côté client : numéro pas WhatsApp, opt-out, etc.).
+  - **Révocations désormais distinctes** : `call.request.permission_revoked` (client a révoqué manuellement depuis les paramètres WhatsApp) et `call.request.permission_auto_revoked` (système a révoqué automatiquement après 4 appels sans réponse). Tous deux sans `call_id` car non liés à un appel précis.
+  - Le catalogue passe de 11 à **17 events `call.*`**. Cf `docs/webhooks.md` §7.
+- **Nouvel event `call.request.service_unavailable`** qui isole les problèmes système Yasmine (compte WhatsApp momentanément bloqué, template en révision, saturation passagère, token à renouveler) du `call.failed` générique. Inclut un champ `retry_after_hint_minutes` (entier) pour suggérer au reseller un délai de retry — distinguer un problème transitoire côté Yasmine d'un échec définitif côté client. Le même event peut être dispatché à l'envoi (échec immédiat) comme tardivement (livraison rejetée a posteriori).
+- Idempotence stricte des nouveaux events : Yasmine garantit qu'un event est dispatché exactement une fois par changement d'état observé (ex. plusieurs notifications « delivered » de la plateforme côté retry réseau ne génèrent qu'un seul `call.request.template_delivered`). L'envelope avec `id=evt_<ULID>` reste l'identifiant définitif côté reseller pour la déduplication.
+
+### Fixed
+
+- **Propagation du code de diagnostic dans `call.failed.data.failure_reason`** : auparavant, `failure_reason` était `meta_<status>` seul (par exemple `meta_400`), même quand un code numérique précis était disponible. Désormais, le slug est `meta_<status>:<code>` quand le code est connu (par exemple `meta_400:131030` pour « numéro pas dans la liste autorisée »). Permet au reseller de discriminer les causes d'échec sans avoir à appeler le support. Le code numérique était précédemment stocké uniquement en logs internes Yasmine. Drift incidentel détecté lors d'un test interactif en sandbox 2026-04-25, corrigé dans ce même chantier.
+
 ### Internal
 
 - Refonte de la table d'historisation des envois de templates WhatsApp : nouvelle clé primaire interne autonome, persistance désormais systématique des tentatives (succès et échecs instantanés côté passerelle), capture du code de diagnostic, timestamp explicite de réponse client. Pas de changement de comportement observable côté reseller. Migration Alembic `0020`.
+- Cartographie des codes de diagnostic plateforme en 4 catégories (`service_unavailable` / `transient` / `client_side` / `unknown`) pour le routing des events sortants. Décision produit explicite, source de vérité dans `agent/meta_error_codes.py`. Tout ajout/retrait de code requiert une validation produit.
 
 ### Removed (BREAKING — schéma DB interne, aucun impact contrat API publique)
 
