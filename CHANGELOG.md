@@ -6,6 +6,10 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Internal
+
+- Refonte de la table d'historisation des envois de templates WhatsApp : nouvelle clé primaire interne autonome, persistance désormais systématique des tentatives (succès et échecs instantanés côté passerelle), capture du code de diagnostic, timestamp explicite de réponse client. Pas de changement de comportement observable côté reseller. Migration Alembic `0020`.
+
 ### Removed (BREAKING — schéma DB interne, aucun impact contrat API publique)
 
 - Suppression de 3 colonnes mortes sur la table `merchants` : `contact_email`, `contact_phone_e164`, `contact_whatsapp_e164`. Ces colonnes étaient alimentées par la même source que les colonnes `shop_email_sav`, `shop_phone_sav`, `shop_whatsapp_sav` introduites au commit `3aa5a38` (Phase 2-final), mais n'étaient lues nulle part. Migration Alembic `0019`. Le contrat API publique reste inchangé : seules les colonnes `shop_*_sav` sont exposées. Aucun champ `Merchant.contact_*` n'apparaissait dans `CallOut` ni dans aucune réponse reseller.
