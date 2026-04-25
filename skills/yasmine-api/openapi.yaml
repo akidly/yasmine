@@ -2524,9 +2524,6 @@ components:
         country: { type: string, enum: [MA, DZ, TN, FR] }
         default_language: { type: string, enum: [ar, fr, en] }
         timezone: { type: string, example: Africa/Casablanca }
-        contact_email: { type: string, format: email }
-        contact_phone_e164: { type: string }
-        contact_whatsapp_e164: { type: string }
         website_url: { type: string, format: uri }
     MerchantPatchInput:
       type: object
@@ -2536,9 +2533,6 @@ components:
         country: { type: string, enum: [MA, DZ, TN, FR] }
         default_language: { type: string }
         timezone: { type: string }
-        contact_email: { type: string, format: email }
-        contact_phone_e164: { type: string }
-        contact_whatsapp_e164: { type: string }
         website_url: { type: string, format: uri }
     Merchant:
       type: object
@@ -2549,9 +2543,6 @@ components:
         country: { type: string, enum: [MA, DZ, TN, FR], nullable: true }
         default_language: { type: string, nullable: true }
         timezone: { type: string, nullable: true }
-        contact_email: { type: string, format: email, nullable: true }
-        contact_phone_e164: { type: string, nullable: true }
-        contact_whatsapp_e164: { type: string, nullable: true }
         website_url: { type: string, format: uri, nullable: true }
         created_at: { type: string, format: date-time }
     MerchantList:

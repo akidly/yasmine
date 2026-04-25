@@ -6,6 +6,10 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Removed (BREAKING — schéma DB interne, aucun impact contrat API publique)
+
+- Suppression de 3 colonnes mortes sur la table `merchants` : `contact_email`, `contact_phone_e164`, `contact_whatsapp_e164`. Ces colonnes étaient alimentées par la même source que les colonnes `shop_email_sav`, `shop_phone_sav`, `shop_whatsapp_sav` introduites au commit `3aa5a38` (Phase 2-final), mais n'étaient lues nulle part. Migration Alembic `0019`. Le contrat API publique reste inchangé : seules les colonnes `shop_*_sav` sont exposées. Aucun champ `Merchant.contact_*` n'apparaissait dans `CallOut` ni dans aucune réponse reseller.
+
 ### Changed (BREAKING)
 
 - Schéma `CallOut` (réponse `POST /v1/calls`, `GET /v1/calls/{id}`, `GET /v1/calls`) refondu :
