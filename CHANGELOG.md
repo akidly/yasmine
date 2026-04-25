@@ -6,6 +6,15 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- Schéma `CallOut` (réponse `POST /v1/calls`, `GET /v1/calls/{id}`, `GET /v1/calls`) refondu :
+  - **Ajouts** : `result` (état métier de l'appel : `CONFIRMED`/`CANCELLED`/`NO_ANSWER`/`UNCLEAR`/`FAILED`), `call_duration_seconds` (durée réelle de la conversation), `meta_error_code` + `meta_error_title` (raison technique des échecs côté opérateur de messagerie).
+  - **Renommé** : `billed_seconds` → `billable_duration_seconds` (plus expressif et symétrique avec `call_duration_seconds`).
+  - **Retiré** : `status` (champ legacy dérivé). Utiliser `request_status` + `call_status` à la place.
+  - Ferme le drift contractuel où le polling `GET /v1/calls/{id}`, présenté comme fallback aux webhooks perdus, ne renvoyait pas le résultat métier de l'appel.
+  - Aucune migration DB nécessaire — toutes les colonnes existent déjà.
+
 ### Changed
 
 - Documentation webhooks : rectification de la description de la dédup `webhook_raw` dans plusieurs fichiers internes + docstring code. L'idempotence effective repose sur l'advisory lock PostgreSQL par `call_id` + les gardes de transition applicatives du dispatcher, pas sur la contrainte `UNIQUE(dedup_hash, received_at)` qui ne bloque pas les retries (contrainte composite avec timestamp qui change à chaque INSERT). `docs/webhooks.md` précise désormais qu'il documente les webhooks sortants uniquement.

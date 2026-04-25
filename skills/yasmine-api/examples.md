@@ -295,14 +295,25 @@ curl -H "Authorization: Bearer $YK" \
 ```bash
 # Lecture d'un appel — scoped tenant, 404 anti-énum si autre reseller / inconnu / UUID invalide
 curl -H "Authorization: Bearer $YK" \
-  "$BASE/v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862"
+  "$BASE/v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862" \
+  | jq '{call_status, result, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
+# {
+#   "call_status": "ended",
+#   "result": "CONFIRMED",
+#   "ended_at": "2026-04-21T14:31:57Z",
+#   "call_duration_seconds": 37,
+#   "billable_duration_seconds": 37,
+#   "failure_reason": null,
+#   "meta_error_code": null,
+#   "meta_error_title": null
+# }
 
 # Consulter le solde courant
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me/balance"
 # {"balance_seconds":3540,"currency":null,"updated_at":"2026-04-21T14:32:11Z"}
 ```
 
-`GET /v1/calls/{id}` est utile pour **réconcilier** après un webhook perdu : le crash mid-retry est un edge case accepté produit (`CHANGELOG.md` C6 Phase 2). Si vous voyez un appel `accepted` mais jamais `ended` côté votre webhook, polling cet endpoint quelques secondes plus tard donne l'état terminal (`ended`, `failed`, `cancelled` + `billed_seconds`).
+`GET /v1/calls/{id}` est utile pour **réconcilier** après un webhook perdu : le crash mid-retry est un edge case accepté produit (`CHANGELOG.md` C6 Phase 2). Si vous voyez un appel `accepted` mais jamais `ended` côté votre webhook, polling cet endpoint quelques secondes plus tard donne **l'état terminal complet** : `call_status` (`ended`/`failed`/`cancelled`), `result` (`CONFIRMED`/`CANCELLED`/`NO_ANSWER`/`UNCLEAR`/`FAILED`), `call_duration_seconds`, `billable_duration_seconds`, `failure_reason` et — pour `result=FAILED` — `meta_error_code` + `meta_error_title`.
 
 Le 404 `call_not_found` ne distingue PAS un appel inexistant d'un appel appartenant à un autre reseller — anti-énumération volontaire.
 

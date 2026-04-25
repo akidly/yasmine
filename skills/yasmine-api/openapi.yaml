@@ -1680,17 +1680,10 @@ components:
             sérialisé JSON compact.
     CallOut:
       type: object
-      required: [id, status, request_status, call_status, created_at, merchant_id, customer_phone_masked]
+      required: [id, request_status, call_status, created_at, merchant_id, customer_phone_masked]
       additionalProperties: false
       properties:
         id: { type: string, format: uuid }
-        status:
-          type: string
-          enum: [queued, dialing, ringing, in_progress, ended, failed]
-          description: |
-            Statut legacy dérivé des rails `request_status` + `call_status`
-            (colonne PostgreSQL GENERATED STORED). Lecture seule — conservé
-            pour compat M3.0–M3.5.
         request_status:
           type: string
           enum:
@@ -1709,11 +1702,11 @@ components:
             ready_to_dial → done`. Terminaux échec : `permission_refused`,
             `permission_expired`, `quota_blocked`, `cancelled_by_reseller`.
 
-            **M3.6 C4** — `quota_blocked` couvre 3 cas de quotas Meta guards
+            **M3.6 C4** — `quota_blocked` couvre 3 cas de quotas guards
             proactifs (cf `doc/whatsapp.md §4.2-§4.3`) :
             - `templates_quota_24h` : 1 call_permission_request déjà envoyé dans les 24 h glissantes.
             - `templates_quota_7d` : 2 déjà envoyés dans les 7 j glissants.
-            - `auto_revoke_imminent_no_answer_streak_4` : 4 NO_ANSWER consécutifs → Meta considère la permission auto-révoquée.
+            - `auto_revoke_imminent_no_answer_streak_4` : 4 NO_ANSWER consécutifs → l'opérateur considère la permission auto-révoquée.
             Le diagnostic exact est persisté dans `calls.failure_reason`
             sous la forme `quota:<reason>`. Non exposé dans la réponse 201
             initial (transition asynchrone via background task).
@@ -1722,7 +1715,7 @@ components:
           enum: [not_started, dialing, ringing, connected, ended, failed, cancelled]
           description: |
             Rail APPEL côté téléphonie (M3.6 C2). Pilotée par les webhooks
-            Meta une fois `request_status = ready_to_dial`. Cycle :
+            entrants une fois `request_status = ready_to_dial`. Cycle :
             `not_started → dialing → ringing → connected → ended`.
             Terminaux échec : `failed`, `cancelled` (M3.6 C8 — via POST
             `/v1/calls/{id}/cancel`).
@@ -1778,13 +1771,30 @@ components:
           description: |
             Horodatage de fin (terminal naturel ou cancel). `null` tant
             que l'appel n'est pas en etat `ended`/`failed`/`cancelled`.
-        billed_seconds:
+        call_duration_seconds:
           type: integer
           nullable: true
           minimum: 0
+          examples: [37]
           description: |
-            Secondes facturees (`max(duration_s, 10)`). `null` tant que
-            l'appel n'est pas finalise.
+            Durée réelle de la conversation en secondes. `null` tant que
+            l'appel n'est pas terminé.
+        billable_duration_seconds:
+          type: integer
+          nullable: true
+          minimum: 0
+          examples: [37]
+          description: |
+            Durée facturée pour cet appel. Égale à
+            `max(call_duration_seconds, 10)` par règle de facturation
+            (plancher 10 s). `null` tant que l'appel n'est pas finalisé.
+        result:
+          type: string
+          nullable: true
+          enum: [CONFIRMED, CANCELLED, NO_ANSWER, VOICEMAIL, BUSY, UNCLEAR, FAILED, null]
+          description: |
+            État métier de l'appel après finalisation. `null` tant que
+            l'appel n'est pas terminé.
         failure_reason:
           type: string
           nullable: true
@@ -1792,6 +1802,22 @@ components:
             Slug machine-readable de la raison d'echec si applicable.
             Exemples : `quota:templates_24h_limit`, `permission_refused`,
             `technical_failure`, `reclaim_after_restart`.
+        meta_error_code:
+          type: integer
+          nullable: true
+          examples: [138021]
+          description: |
+            Code d'erreur de l'opérateur de messagerie sur appels échoués.
+            Renseigné uniquement quand `result=FAILED` et que l'opérateur
+            a fourni un code structuré. `null` sinon.
+        meta_error_title:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: |
+            Libellé textuel de l'erreur opérateur correspondant à
+            `meta_error_code`. Renseigné uniquement quand `result=FAILED`
+            et que l'opérateur a fourni un libellé. `null` sinon.
         cancelled_state:
           type: string
           nullable: true

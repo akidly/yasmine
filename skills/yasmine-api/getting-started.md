@@ -282,11 +282,18 @@ Recette curl complète dans `docs/examples.md §3.3`.
 
 ## 4.5. Réconciliation après webhook perdu (P0-2)
 
-Si un webhook sortant est perdu (crash mid-retry — edge case accepté produit), polling `GET /v1/calls/{id}` quelques secondes plus tard donne l'état terminal de l'appel (`ended` / `failed` / `cancelled` + `billed_seconds`, `ended_at`, etc.). Cet endpoint est scopé tenant : un 404 `call_not_found` est renvoyé avec un body **byte-identique** que le call soit inexistant, propriété d'un autre reseller, ou que le path contienne un UUID syntaxiquement invalide.
+Si un webhook sortant est perdu (crash mid-retry — edge case accepté produit), polling `GET /v1/calls/{id}` quelques secondes plus tard donne **l'état complet** de l'appel — y compris le résultat métier (`result`) et la durée (`call_duration_seconds`, `billable_duration_seconds`) — sans dépendre du webhook. Cet endpoint est scopé tenant : un 404 `call_not_found` est renvoyé avec un body **byte-identique** que le call soit inexistant, propriété d'un autre reseller, ou que le path contienne un UUID syntaxiquement invalide.
 
 ```bash
-curl -H "Authorization: Bearer $YK" "$BASE/v1/calls/$CALL_ID" | jq '{status,ended_at,billed_seconds,failure_reason}'
+curl -H "Authorization: Bearer $YK" "$BASE/v1/calls/$CALL_ID" \
+  | jq '{call_status, result, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
 ```
+
+Champs clés à attendre une fois le call terminé :
+
+- `call_status` parmi `ended` / `failed` / `cancelled` (rail APPEL).
+- `result` parmi `CONFIRMED` / `CANCELLED` / `NO_ANSWER` / `UNCLEAR` / `FAILED` — état métier de la conversation. `null` tant que l'appel n'est pas terminé.
+- `failure_reason` + (si `result=FAILED`) `meta_error_code` / `meta_error_title` — diagnostic technique côté opérateur de messagerie.
 
 ---
 
