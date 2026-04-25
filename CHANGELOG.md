@@ -12,6 +12,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ### Added
 
+- Pré-création automatique des partitions mensuelles pour les tables `webhook_raw` et `call_events`. Un timer systemd `yasmine-partitions.timer` tourne le 1er de chaque mois à 00:30 UTC et exécute `scripts/create_partitions.py`, qui crée les partitions des 3 mois suivants (idempotent). Évite l'échec d'INSERT `no partition of relation found for row` lorsque le buffer initial de partitions est consommé. Les unit files (`ops/yasmine-partitions.service` + `ops/yasmine-partitions.timer`) sont versionnés dans le repo et déployés automatiquement par `ops/deploy.sh`.
 - Header `X-Yasmine-Event` ajouté aux requêtes HTTP des webhooks sortants (dispatcher principal + endpoint de test). Permet aux resellers de router/dédupliquer les events sans avoir à parser le body JSON. Conforme à ce qui était documenté dans `docs/webhooks.md`.
 - `docs/webhooks.md` est désormais synchronisé vers le plugin `akidly/yasmine` au push master.
 - Audit interne des échecs Meta : 3 nouvelles colonnes internes (`calls.meta_error_code`, `calls.meta_error_title`, `calls.meta_error_details`) projetées depuis les webhooks `terminate FAILED` WhatsApp. Le champ `failure_reason` (exposé via `CallOut` et l'event sortant `call.failed`) s'enrichit désormais du code Meta au format `meta_terminate:<code>` (ex. `meta_terminate:138021`) — discriminant vs les slugs HTTP origination existants (`meta_500`, `meta_400:138008`). Aucun changement de schéma côté reseller. Migration Alembic `0018`.
