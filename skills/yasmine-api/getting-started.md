@@ -64,6 +64,7 @@ curl -X POST https://api.yasmine.akidly.com/v1/calls \
     },
     "order": {
       "delivery_address": "12 Rue du Test, Casablanca",
+      "items_text": "Crème hydratante visage 50ml",
       "amount": "249.00",
       "currency": "MAD"
     },
@@ -75,6 +76,12 @@ curl -X POST https://api.yasmine.akidly.com/v1/calls \
 ```
 
 Les sous-objets `customer`, `shop_info`, `order`, `call_params` acceptent d'autres champs facultatifs (genre client, politiques SAV, delivery_method, voice_id, etc.). La liste complète et leurs contraintes sont dans `docs/openapi.yaml` (schémas `CustomerInput`, `ShopInfoInput`, `OrderInput`, `CallParamsInput`).
+
+**Détail commande — deux formats au choix** :
+- **`order.items_text`** (chaîne libre, max 500 caractères) — recommandé pour les commandes à article unique, ou quand le détail n'est pas découpé côté reseller (ex. "t-shirt blanc et jean noir XXL").
+- **`order.items`** (tableau structuré, max 50 entrées avec `name` requis + `quantity`/`variant`/`unit_price` optionnels) — recommandé quand les articles sont déjà découpés côté reseller et que vous voulez que l'agent les cite un par un.
+
+Les deux peuvent cohabiter ; si les deux sont fournis, la liste structurée prime au moment de l'appel. Recette curl complète pour la liste structurée dans [`docs/examples.md §1.bis`](https://docs.yasmine.akidly.com/examples.md).
 
 Réponse attendue (HTTP **201 Created**) :
 

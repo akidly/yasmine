@@ -13,7 +13,9 @@ Remplacez `$YK` par votre clé et collez directement dans un terminal.
 
 ---
 
-## 1. Appel simple Maroc
+## 1. Appel simple Maroc — commande à article unique (texte libre)
+
+La majorité des commandes contiennent un seul article. Le moyen le plus simple de transmettre le détail est un résumé libre via `order.items_text` (max 500 caractères). Yasmine cite ce résumé tel quel auprès du client.
 
 ```bash
 curl -X POST "$BASE/v1/calls" \
@@ -31,6 +33,7 @@ curl -X POST "$BASE/v1/calls" \
     },
     "order": {
       "delivery_address": "12 Rue X, Casablanca",
+      "items_text": "Crème hydratante visage 50ml",
       "amount": "249.00",
       "currency": "MAD"
     },
@@ -61,6 +64,56 @@ Réponse (HTTP **201**) :
 L'agent parle en darija marocaine. Durée typique : 40-60 secondes.
 
 Le sous-objet `customer` accepte aussi `gender`, `email`, `notes`, `language` — voir le schéma `CustomerInput` dans `docs/openapi.yaml` pour la liste complète des champs.
+
+`items_text` est facultatif : un POST sans `items_text` ni `items` reste valide (Yasmine demandera alors au client de préciser ou s'appuiera uniquement sur `amount`).
+
+---
+
+## 1.bis Commande à plusieurs articles — liste structurée
+
+Quand la commande contient plusieurs articles distincts à citer un par un, utilisez `order.items` (tableau, max 50 entrées). Chaque article expose `name` (requis), `quantity` (défaut 1), `variant` et `unit_price` (optionnels).
+
+```bash
+curl -X POST "$BASE/v1/calls" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "customer": {
+      "name": "Ahmed Bennani",
+      "phone_number": "+212612345678"
+    },
+    "merchant_external_id": "boutique-casa-01",
+    "shop_info": {
+      "name": "GlowArt Casa"
+    },
+    "order": {
+      "external_id": "CMD-2026-00790",
+      "delivery_address": "12 Rue X, Casablanca",
+      "items": [
+        { "name": "T-shirt blanc en coton", "quantity": 2, "variant": "XXL", "unit_price": "120.00" },
+        { "name": "Jean noir slim", "quantity": 1, "unit_price": "320.00" }
+      ],
+      "amount": "560.00",
+      "currency": "MAD"
+    },
+    "country": "MA",
+    "call_params": {
+      "purpose": "confirmation"
+    }
+  }'
+```
+
+**Choix entre les deux formats** :
+
+| Cas | Format recommandé |
+|---|---|
+| Commande à article unique | `items_text` (chaîne libre) |
+| Plusieurs articles déjà découpés côté reseller (nom, variante, prix unitaire) | `items` (tableau structuré) |
+| Plusieurs articles non découpés (ex. "t-shirt blanc et jean noir XXL") | `items_text` |
+| Aucune des deux infos disponible | omettre les deux |
+
+`items` et `items_text` peuvent cohabiter dans la même requête : si les deux sont fournis, la liste structurée prime au moment de l'appel.
 
 ---
 
