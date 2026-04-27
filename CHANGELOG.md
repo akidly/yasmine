@@ -18,6 +18,7 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ### Fixed
 
+- **Détail commande désormais transmis intégralement à l'agent vocal lors de l'appel client** : adresse de livraison, articles, mode et zone de livraison, montants (sous-total, frais de livraison, remise), date estimée de livraison, numéro de commande et notes étaient acceptés et persistés en base mais ignorés au moment de l'appel — l'agent appelait donc le client sans connaître le contexte. Tout ce détail remonte désormais jusqu'au dialogue. Si seul un résumé libre `order.items_text` est fourni (sans liste structurée `order.items`), il est cité tel quel comme contenu de la commande.
 - **Propagation du code de diagnostic dans `call.failed.data.failure_reason`** : auparavant, `failure_reason` était `meta_<status>` seul (par exemple `meta_400`), même quand un code numérique précis était disponible. Désormais, le slug est `meta_<status>:<code>` quand le code est connu (par exemple `meta_400:131030` pour « numéro pas dans la liste autorisée »). Permet au reseller de discriminer les causes d'échec sans avoir à appeler le support. Le code numérique était précédemment stocké uniquement en logs internes Yasmine. Drift incidentel détecté lors d'un test interactif en sandbox 2026-04-25, corrigé dans ce même chantier.
 
 ### Internal
