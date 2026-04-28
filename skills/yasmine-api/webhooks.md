@@ -486,6 +486,8 @@ Aucun event rail APPEL ne suivra. Le reseller peut basculer sur un autre canal (
 
 ### Rail APPEL (vie de l'appel téléphonique)
 
+> **Note Lot 2 chantier pays × langue (Unreleased)** : seuls les **trois events terminaux** du rail APPEL portent les champs `country` (ISO) et `language` (`ar`/`fr`) — `call.ended`, `call.cancelled`, `call.failed`. Les events intermédiaires (`call.started`, `call.ringing`, `call.connected`) ne les portent **pas** : intentionnel, le reseller a déjà ces deux informations depuis sa propre requête `POST /v1/calls`. Idem pour les events `call.request.*` du rail DEMANDE et pour `call.request.permission_revoked` / `call.request.permission_auto_revoked` (scope `wa_id`, pas d'appel précis associé).
+
 #### `call.started`
 Transition `call_status → dialing`. La plateforme a accepté la requête d'appel, la composition est en cours.
 
@@ -518,12 +520,16 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "call_id": "d5a97d2b-...",
   "result": "CONFIRMED",
   "duration_s": 37,
-  "billable_s": 37
+  "billable_s": 37,
+  "country": "DZ",
+  "language": "ar"
 }
 ```
 - `result` parmi `CONFIRMED`, `CANCELLED`, `NO_ANSWER`, `VOICEMAIL`, `BUSY`, `UNCLEAR`, `FAILED`.
 - `duration_s` : durée totale de l'appel côté plateforme.
 - `billable_s` : secondes décomptées du solde reseller.
+- `country` (depuis le Lot 2 chantier pays × langue) : code ISO 3166-1 alpha-2 (`MA`/`DZ`/`TN`/`FR`), echo de la valeur fournie à la création. Absent sur les appels antérieurs au Lot 2.
+- `language` (depuis le Lot 2 chantier pays × langue) : langue effectivement utilisée (`ar` ou `fr`). Pratique quand vous n'aviez pas spécifié `language` à la création — ce champ vous renvoie la langue locale du pays appliquée par défaut. Absent sur les appels antérieurs au Lot 2.
 
 #### `call.cancelled`
 **M3.6 C8** — émis quand le reseller appelle `POST /v1/calls/{id}/cancel`. Distinct de `call.ended` (fin naturelle) et `call.failed` (échec infra). Facturation ajustée sur le payload même.
@@ -534,11 +540,14 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "cancelled_at": "2026-04-20T14:00:16.123456Z",
   "cancelled_state": "connected",
   "billed_seconds": 25,
-  "merchant_id": "a5797a0a-..."
+  "merchant_id": "a5797a0a-...",
+  "country": "MA",
+  "language": "fr"
 }
 ```
 - `cancelled_state` : `call_status` au moment où le cancel a été traité (`not_started`/`dialing`/`ringing`/`connected`). Permet au reseller de savoir à quel stade l'appel a été coupé.
 - `billed_seconds` : 0 si cancel avant `connected` ; sinon `ceil(now - accepted_at)` avec plancher 10 s.
+- `country` / `language` (depuis le Lot 2 chantier pays × langue) : mêmes sémantiques que pour `call.ended`. Absents sur les cancels d'appels antérieurs au Lot 2.
 
 **Pas d'event ré-émis** si le cancel est idempotent (appel déjà terminal au moment de la requête).
 
@@ -548,7 +557,9 @@ Transition `call_status → failed`. Échec infra côté plateforme ou côté cl
 ```json
 {
   "call_id": "d5a97d2b-...",
-  "failure_reason": "meta_400:131030"
+  "failure_reason": "meta_400:131030",
+  "country": "FR",
+  "language": "fr"
 }
 ```
 - `failure_reason` parmi (non exhaustif) :
@@ -557,6 +568,7 @@ Transition `call_status → failed`. Échec infra côté plateforme ou côté cl
   - `run_origination_unexpected:<ExcType>` : crash non-prévu dans le handler origination.
   - `resumed_after_restart` : call marqué échoué au redémarrage (process a redémarré pendant que ce call était en cours).
   - `janitor_projection` : le janitor a réconcilié un état d'échec via un poll plateforme.
+- `country` / `language` (depuis le Lot 2 chantier pays × langue) : mêmes sémantiques que pour `call.ended`. Absents sur les échecs d'appels antérieurs au Lot 2.
 
 **Phase 3** : pour les codes liés à un problème système Yasmine (compte bloqué, template paused, rate limit Yasmine, etc.), Yasmine ne dispatche plus `call.failed` mais le nouveau `call.request.service_unavailable` (cf ci-dessous) — pour que le reseller distingue clairement un échec définitif côté client d'un problème transitoire côté Yasmine.
 
