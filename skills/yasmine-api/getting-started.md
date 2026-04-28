@@ -345,7 +345,15 @@ Pas encore. Chaque appel consomme du crédit réel et déclenche un appel télé
 Oui — depuis P0-1 le header est obligatoire sur `POST /v1/calls`, sinon `400 missing_idempotency_key`. Format libre, 1-255 chars (UUID v4 recommandé), TTL 24 h, scope par reseller. Une 2e requête identique (même clé + même body) renvoie la réponse stockée bit-for-bit avec `X-Idempotent-Replay: true`. Une 2e requête avec la même clé mais un body différent retourne `409 idempotency_key_conflict`. Voir `docs/examples.md §4`.
 
 **Quels pays sont supportés ?**
-Pour l'instant : `MA` (Maroc), `DZ` (Algérie), `TN` (Tunisie), `FR` (France). Le choix du profil conversationnel (darija / français) est fait côté serveur selon le `country`, transparent pour vous.
+Pour l'instant : `MA` (Maroc), `DZ` (Algérie), `TN` (Tunisie), `FR` (France).
+
+**Quelle langue parle Yasmine pendant l'appel ?**
+Le pays détermine une **langue par défaut** : `MA`/`DZ`/`TN` → arabe (`ar`), `FR` → français (`fr`). Cette langue est transparente pour vous si votre client préfère la langue locale du pays — pas besoin d'envoyer le champ `language` dans le payload.
+
+**Comment imposer une langue différente du défaut pays ?**
+Ajouter le champ optionnel `language` à la racine du payload `POST /v1/calls`, avec la valeur `ar` ou `fr`. Exemple : un client marocain qui préfère le français → `country: "MA", language: "fr"`. Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. La combinaison `country=FR, language=ar` est rejetée en 422 (`language_not_supported_for_country`).
+
+Les resellers existants qui n'envoient pas `language` continuent à fonctionner exactement comme avant — la langue locale du pays est appliquée par défaut.
 
 **Comment suis-je facturé ?**
 En **secondes billables** = `max(duration_s, 10)`. Chaque appel consomme au minimum 10 secondes même s'il est plus court.

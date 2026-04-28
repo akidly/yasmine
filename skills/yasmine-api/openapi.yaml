@@ -164,6 +164,25 @@ paths:
                   country: "MA"
                   call_params:
                     purpose: "confirmation"
+              maroc_french_speaker:
+                summary: Appel Maroc avec client francophone (override de la langue par défaut)
+                value:
+                  customer:
+                    name: "Sophie El Idrissi"
+                    phone_number: "+212661111222"
+                  merchant_external_id: "boutique-casa-01"
+                  shop_info:
+                    name: "GlowArt Casa"
+                  order:
+                    external_id: "CMD-2026-00791"
+                    delivery_address: "12 Rue X, Casablanca"
+                    items_text: "Crème hydratante visage 50ml"
+                    amount: "249.00"
+                    currency: "MAD"
+                  country: "MA"
+                  language: "fr"
+                  call_params:
+                    purpose: "confirmation"
               france_full:
                 summary: Appel France, profil client + shop + order complets
                 value:
@@ -1751,11 +1770,31 @@ components:
           type: string
           enum: [MA, DZ, TN, FR]
           description: |
-            Code pays ISO 3166-1 alpha-2 du client à appeler. Détermine la
-            langue et le contexte culturel utilisés par l'IA. Les profils
-            conversationnels internes sont choisis côté serveur — transparent
-            pour le reseller.
+            Code pays ISO 3166-1 alpha-2 du client à appeler. Détermine
+            le profil conversationnel et la **langue par défaut**
+            appliquée si `language` n'est pas fourni : `MA`/`DZ`/`TN` →
+            `ar`, `FR` → `fr`. Les profils conversationnels internes
+            sont choisis côté serveur — transparent pour le reseller.
           examples: [MA]
+        language:
+          type: string
+          nullable: true
+          enum: [ar, fr]
+          description: |
+            Langue de l'appel. **Optionnel** — si absent, applique la
+            langue locale du pays (`MA`/`DZ`/`TN` → `ar`, `FR` → `fr`).
+            Permet à un reseller dont le client préfère le français
+            d'avoir un appel en français même depuis un pays maghrébin
+            (combinaisons `MA`/`DZ`/`TN` + `fr` toutes acceptées).
+
+            **Combinaison rejetée** : `country=FR` + `language=ar` →
+            422 `language_not_supported_for_country` (cf
+            [errors](https://docs.yasmine.akidly.com/errors)).
+
+            **Rétrocompat** : un payload sans ce champ se comporte
+            exactement comme avant l'introduction (langue locale
+            appliquée). Aucune migration côté reseller requise.
+          examples: ["fr"]
         call_params:
           $ref: "#/components/schemas/CallParamsInput"
         metadata:
@@ -1836,6 +1875,17 @@ components:
           nullable: true
           enum: [MA, DZ, TN, FR, null]
           description: Code ISO echoed du reseller — jamais le profil conversationnel interne.
+        language:
+          type: string
+          nullable: true
+          enum: [ar, fr, null]
+          description: |
+            Langue effectivement utilisée pour cet appel. Echo de la
+            valeur fournie dans le payload, ou langue locale appliquée
+            par défaut (`MA`/`DZ`/`TN` → `ar`, `FR` → `fr`). `null`
+            sur les anciens appels antérieurs à l'introduction du
+            champ.
+          examples: ["ar"]
         metadata:
           type: object
           nullable: true

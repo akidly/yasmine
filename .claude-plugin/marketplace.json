@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Akidly plugin marketplace — official Yasmine voice AI integrations for Claude Code.",
-    "version": "0.1.29"
+    "version": "0.1.30"
   },
   "plugins": [
     {
       "name": "yasmine",
       "source": "./",
       "description": "Yasmine voice AI API — automated outbound call confirmations for reseller workflows (MA/DZ/TN/FR). Bundles 8 MCP tools (4 pass-through + 4 introspection) and the yasmine-api skill.",
-      "version": "0.1.29",
+      "version": "0.1.30",
       "author": {
         "name": "Akidly"
       },

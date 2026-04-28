@@ -158,6 +158,37 @@ La `country` bascule automatiquement le serveur vers le profil conversationnel f
 
 ---
 
+## 2.5. Forcer la langue d'un appel (override du défaut pays)
+
+Le pays détermine une langue par défaut (`MA`/`DZ`/`TN` → `ar`, `FR` → `fr`). Si votre client préfère une autre langue parmi celles supportées, ajoutez le champ optionnel `language` à la racine du payload. Exemple : un client marocain qui préfère le français.
+
+```bash
+curl -X POST "$BASE/v1/calls" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "customer": {
+      "name": "Sophie El Idrissi",
+      "phone_number": "+212661111222"
+    },
+    "merchant_external_id": "boutique-casa-01",
+    "shop_info": {"name": "GlowArt Casa"},
+    "order": {
+      "delivery_address": "12 Rue X, Casablanca",
+      "amount": "249.00",
+      "currency": "MAD"
+    },
+    "country": "MA",
+    "language": "fr",
+    "call_params": {"purpose": "confirmation"}
+  }'
+```
+
+Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. La combinaison `country=FR` + `language=ar` est rejetée en `422 language_not_supported_for_country`. Si vous omettez `language`, la langue locale du pays est appliquée — comportement strictement identique aux versions précédentes de l'API (rétrocompat garantie). La langue effective est ré-écho dans le champ `language` de la réponse.
+
+---
+
 ## 3. Avec metadata reseller
 
 Utilisez `metadata` pour transporter votre identifiant de commande interne, référence facture, ou tout contexte dont vous aurez besoin plus tard. Limite : **2 KB** sérialisé en JSON compact.

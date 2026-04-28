@@ -73,6 +73,7 @@ Certains `type` ajoutent des champs dédiés :
 | `cursor_expired` | 400 | Curseur > 24 h (TTL fixe, P1-3). Même remédiation : refaire la 1re requête sans `cursor`. |
 | `payload_too_large` | 413 | Émis sur `POST /webhooks/whatsapp` quand le body dépasse 256 KiB (#P0-6). En pratique Meta envoie ~50 KB. Si vous voyez ce code côté Meta retry storm, contacter le support — c'est probablement un payload falsifié ou un bug Meta inattendu. **Pas applicable aux endpoints `/v1/*`** (qui ont leur propre validation Pydantic). |
 | `validation_error` | 422 | Payload mal formé. Voir `errors`. |
+| `language_not_supported_for_country` | 422 | `POST /v1/calls` avec une combinaison `(country, language)` non disponible. Aujourd'hui : `country=FR` + `language=ar`. Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. Omettre `language` pour appliquer la langue par défaut du pays. |
 | `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé (M3.6 C7). Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
 | `call_not_found` | 404 | POST `/v1/calls/{id}/cancel` sur un `call_id` inexistant ou appartenant à un autre reseller (M3.6 C8). Pas de leak d'existence. |
 | `webhook_url_rejected` | 400 | POST `/v1/me/webhooks` avec URL rejetée par le SSRF guard. Champ `reason` parmi `invalid_url`/`scheme_not_allowed`/`localhost_rejected`/`dns_resolution_failed`/`private_ip_rejected`. |
