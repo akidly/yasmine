@@ -54,6 +54,7 @@ Certains `type` ajoutent des champs dédiés :
 
 | Slug | Status | Déclenché quand |
 |---|---|---|
+| `bad_request` | 400 | Slug par défaut pour tout `400` qui n'override pas son type. En pratique : la plupart des 400 spécifiques utilisent un slug ciblé (`missing_idempotency_key`, `idempotency_key_*`, `invalid_cursor`, etc.). Si vous voyez `bad_request` brut, c'est un cas non-mappé — lire `detail` pour le diagnostic. |
 | `invalid_api_key` | 401 | Header `Authorization` absent, malformé, ou clé invalide/révoquée. Le header `WWW-Authenticate: Bearer` est propagé. |
 | `insufficient_balance` | 402 | Solde reseller < minimum facturable (10 s). |
 | `forbidden` | 403 | Clé valide mais sans droit sur la ressource. |
@@ -75,6 +76,7 @@ Certains `type` ajoutent des champs dédiés :
 | `validation_error` | 422 | Payload mal formé. Voir `errors`. |
 | `language_not_supported_for_country` | 422 | `POST /v1/calls` avec une combinaison `(country, language)` non disponible. Aujourd'hui : `country=FR` + `language=ar`. Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. Omettre `language` pour appliquer la langue par défaut du pays. |
 | `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé (M3.6 C7). Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
+| `rate_limited` | 429 | Slug par défaut pour les 429 qui ne passent pas par le rate-limiter principal `/v1/*` (cas marginal — un 429 émis directement via `HTTPException(429)` sans override). En pratique vous verrez surtout `rate_limit_exceeded`. Même remédiation : respecter `Retry-After`. |
 | `call_not_found` | 404 | POST `/v1/calls/{id}/cancel` sur un `call_id` inexistant ou appartenant à un autre reseller (M3.6 C8). Pas de leak d'existence. |
 | `webhook_url_rejected` | 400 | POST `/v1/me/webhooks` avec URL rejetée par le SSRF guard. Champ `reason` parmi `invalid_url`/`scheme_not_allowed`/`localhost_rejected`/`dns_resolution_failed`/`private_ip_rejected`. |
 | `webhook_already_configured` | 409 | POST `/v1/me/webhooks` sur reseller déjà configuré. DELETE d'abord pour rotate. |

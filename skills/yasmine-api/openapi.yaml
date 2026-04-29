@@ -5,11 +5,10 @@ info:
   summary: Agent vocal IA pour confirmation de commandes — API reseller.
   description: |
     API Yasmine — déclenche des appels IA sortants pour confirmer des commandes,
-    et gère crédits, webhooks, clés API et (à venir) merchants en self-service.
+    et gère crédits, webhooks, clés API en self-service.
 
     **Statut des endpoints** :
     - `x-status: live` — implémenté et appelable en prod aujourd'hui.
-    - `x-status: planned` — cible contractuelle, pas encore implémentée. `404` en attendant. Disponible après M4 (cf roadmap interne).
     - `x-status: internal` — route technique, pas sous le SLA `/v1/*`.
 
     **Format d'erreur** : toutes les erreurs sous `/v1/*` sont au format
@@ -68,13 +67,10 @@ tags:
     description: Déclencher et consulter les appels IA sortants.
   - name: Account
     description: Profil reseller, solde, consommation, transactions, clés API, webhooks sortants.
-  - name: Merchants
-    description: Référentiel des boutiques du reseller.
   - name: Webhooks
     description: |
       Configuration self-service du webhook sortant unique par reseller.
-      L'émission réelle des events (catalogue `call.*`) arrive en Phase 2
-      — cf `docs/webhooks.md`.
+      Émission des events (catalogue `call.*`) cf `docs/webhooks.md`.
   - name: API Keys
     description: |
       Gestion self-service des clés API du reseller (P1-4). CRUD simple :
@@ -83,9 +79,9 @@ tags:
       bascule sécurité est la révocation manuelle.
   - name: Internal
     description: |
-      Endpoints techniques appelés uniquement par des systèmes externes
-      (Meta WhatsApp). Ne sont **pas** destinés à l'intégration reseller —
-      documentés ici pour transparence opérationnelle uniquement.
+      Routes techniques hors SLA `/v1/*` (probe santé). Ne sont **pas**
+      destinées à l'intégration reseller — documentées pour transparence
+      opérationnelle uniquement.
 security:
   - bearerAuth: []
 paths:
@@ -348,7 +344,7 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
 
-  /v1/calls/{id}:
+  /v1/calls/{call_id}:
     get:
       operationId: getCall
       summary: Récupérer un appel
@@ -379,42 +375,7 @@ paths:
         "404": { $ref: "#/components/responses/CallNotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
-  /v1/calls/{id}/events:
-    get:
-      operationId: getCallEvents
-      summary: Timeline granulaire d'un appel
-      tags: [Calls]
-      x-status: planned
-      description: "Disponible après M4."
-      parameters:
-        - $ref: "#/components/parameters/CallId"
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Cursor"
-      responses:
-        "200":
-          description: Liste d'events (queued, ringing, accepted, ended, …).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/CallEventList" }
-
-  /v1/calls/{id}/transcript:
-    get:
-      operationId: getCallTranscript
-      summary: Transcript + summary d'un appel
-      tags: [Calls]
-      x-status: planned
-      description: "Disponible après M4."
-      parameters:
-        - $ref: "#/components/parameters/CallId"
-      responses:
-        "200":
-          description: Transcript structuré.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Transcript" }
-        "404": { $ref: "#/components/responses/NotFound" }
-
-  /v1/calls/{id}/cancel:
+  /v1/calls/{call_id}/cancel:
     post:
       operationId: cancelCall
       summary: Annuler un appel en cours
@@ -1049,159 +1010,6 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
 
   # -------------------------------------------------------------------------
-  # Merchants
-  # -------------------------------------------------------------------------
-  /v1/merchants:
-    get:
-      operationId: listMerchants
-      summary: Lister les merchants
-      tags: [Merchants]
-      x-status: planned
-      description: "Disponible après M4."
-      parameters:
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Cursor"
-      responses:
-        "200":
-          description: Page paginée.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MerchantList" }
-    post:
-      operationId: createMerchant
-      summary: Créer un merchant
-      tags: [Merchants]
-      x-status: planned
-      description: "Disponible après M4."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MerchantCreateInput" }
-      responses:
-        "201":
-          description: Merchant créé.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Merchant" }
-
-  /v1/merchants/{id}:
-    patch:
-      operationId: updateMerchant
-      summary: Mettre à jour un merchant
-      tags: [Merchants]
-      x-status: planned
-      description: "Disponible après M4."
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MerchantPatchInput" }
-      responses:
-        "200":
-          description: Merchant mis à jour.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Merchant" }
-
-  # -------------------------------------------------------------------------
-  # Internal — Meta webhooks (NON destinés aux resellers)
-  # -------------------------------------------------------------------------
-  /webhooks/whatsapp:
-    get:
-      operationId: verifyWhatsappWebhook
-      summary: Challenge de vérification Meta
-      tags: [Internal]
-      x-status: live
-      security: []
-      description: |
-        Endpoint appelé **uniquement par Meta** lors de la configuration
-        du webhook (GET avec `hub.mode=subscribe` + `hub.verify_token`).
-
-        **Ne pas appeler côté reseller** — documenté ici pour transparence
-        opérationnelle uniquement.
-      parameters:
-        - in: query
-          name: hub.mode
-          required: true
-          schema: { type: string, enum: [subscribe] }
-        - in: query
-          name: hub.verify_token
-          required: true
-          schema: { type: string }
-        - in: query
-          name: hub.challenge
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: Challenge renvoyé en texte brut.
-          content:
-            text/plain:
-              schema: { type: string }
-        "403":
-          description: Verify token invalide.
-    post:
-      operationId: receiveWhatsappWebhook
-      summary: Réception des events Meta WhatsApp
-      tags: [Internal]
-      x-status: live
-      security: []
-      description: |
-        Endpoint appelé **uniquement par Meta** pour livrer les events
-        d'appels WhatsApp (ringing, accepted, terminate, permission
-        reply). Signature obligatoire via `X-Hub-Signature-256` (HMAC
-        SHA-256 avec `WHATSAPP_APP_SECRET`).
-
-        **Fail-closed** depuis M1 : 503 si le secret n'est pas configuré
-        côté serveur. Format d'erreur legacy `application/json
-        {"detail": "..."}` — **pas** RFC 7807 (préserve la compat Meta).
-
-        **Ne pas appeler côté reseller**.
-      parameters:
-        - in: header
-          name: X-Hub-Signature-256
-          required: true
-          schema: { type: string, example: "sha256=<hex>" }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              description: Payload Meta brut (object=whatsapp_business_account).
-      responses:
-        "200":
-          description: Ack Meta.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status: { type: string, example: ok }
-        "400":
-          description: JSON invalide.
-        "403":
-          description: Signature HMAC invalide.
-        "413":
-          description: |
-            Body > 256 KiB (#P0-6). Anti-DoS appliqué AVANT vérification
-            HMAC pour économiser le calcul SHA-256 sur payloads suspects.
-            Format `application/problem+json` (slug `payload_too_large`)
-            — exception au format legacy de cet endpoint, sans impact
-            Meta qui ne lit jamais le body de réponse.
-          content:
-            application/problem+json:
-              schema: { $ref: "#/components/schemas/Problem" }
-        "503":
-          description: Serveur mal configuré (`WHATSAPP_APP_SECRET` absent).
-
-  # -------------------------------------------------------------------------
   # Ops — probe santé (hors SLA /v1/*)
   # -------------------------------------------------------------------------
   /healthz:
@@ -1295,7 +1103,7 @@ components:
       description: Champ + signe. `-` pour DESC. Défaut `-created_at`.
     CallId:
       in: path
-      name: id
+      name: call_id
       required: true
       # P0-2 : on accepte n'importe quelle string en path. Un UUID
       # syntaxiquement invalide est traite cote serveur comme 404
@@ -2110,41 +1918,8 @@ components:
           description: |
             Redondant avec `next_cursor is not null` — exposé pour
             simplifier le code client (pas besoin de comparer à `null`).
-    CallEvent:
-      type: object
-      properties:
-        event_type: { type: string }
-        source: { type: string, enum: [provider, agent, system] }
-        occurred_at: { type: string, format: date-time }
-        data: { type: object, additionalProperties: true }
-    CallEventList:
-      allOf:
-        - $ref: "#/components/schemas/Page"
-        - type: object
-          properties:
-            data:
-              type: array
-              items: { $ref: "#/components/schemas/CallEvent" }
-    Transcript:
-      type: object
-      properties:
-        call_id: { type: string, format: uuid }
-        transcript: { type: string, nullable: true }
-        turns:
-          type: array
-          nullable: true
-          items:
-            type: object
-            properties:
-              role: { type: string, enum: [agent, customer] }
-              text: { type: string }
-              t_start_ms: { type: integer }
-              t_end_ms: { type: integer }
-        agent_summary: { type: string, nullable: true }
-        client_sentiment: { type: string, nullable: true }
-        confirmed_items: { type: object, nullable: true }
     # -----------------------------------------------------------------------
-    # Account (planned)
+    # Account
     # -----------------------------------------------------------------------
     Reseller:
       type: object
@@ -2717,45 +2492,3 @@ components:
             data:
               type: array
               items: { $ref: "#/components/schemas/WebhookDelivery" }
-    # -----------------------------------------------------------------------
-    # Merchants (planned)
-    # -----------------------------------------------------------------------
-    MerchantCreateInput:
-      type: object
-      required: [external_id, name]
-      additionalProperties: false
-      properties:
-        external_id: { type: string }
-        name: { type: string }
-        country: { type: string, enum: [MA, DZ, TN, FR] }
-        default_language: { type: string, enum: [ar, fr, en] }
-        timezone: { type: string, example: Africa/Casablanca }
-        website_url: { type: string, format: uri }
-    MerchantPatchInput:
-      type: object
-      additionalProperties: false
-      properties:
-        name: { type: string }
-        country: { type: string, enum: [MA, DZ, TN, FR] }
-        default_language: { type: string }
-        timezone: { type: string }
-        website_url: { type: string, format: uri }
-    Merchant:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        external_id: { type: string }
-        name: { type: string }
-        country: { type: string, enum: [MA, DZ, TN, FR], nullable: true }
-        default_language: { type: string, nullable: true }
-        timezone: { type: string, nullable: true }
-        website_url: { type: string, format: uri, nullable: true }
-        created_at: { type: string, format: date-time }
-    MerchantList:
-      allOf:
-        - $ref: "#/components/schemas/Page"
-        - type: object
-          properties:
-            data:
-              type: array
-              items: { $ref: "#/components/schemas/Merchant" }
