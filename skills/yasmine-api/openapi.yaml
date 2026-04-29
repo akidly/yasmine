@@ -300,6 +300,17 @@ paths:
               autre échec non mappé. Un cancel reseller termine ici et
               non dans un `cancelled` distinct côté `calls.status`.
         - in: query
+          name: result
+          required: false
+          schema:
+            type: string
+            enum: [confirmed, cancelled, requires_action]
+          description: |
+            Filtre exact sur le résultat principal métier. Exclut les
+            appels en cours (`result` `null`). Combinable avec `status`
+            pour cibler par exemple `?status=ended&result=confirmed`
+            (commandes confirmées sans souci).
+        - in: query
           name: merchant_id
           required: false
           schema: { type: string, format: uuid }
@@ -1929,10 +1940,67 @@ components:
         result:
           type: string
           nullable: true
-          enum: [CONFIRMED, CANCELLED, NO_ANSWER, VOICEMAIL, BUSY, UNCLEAR, FAILED, null]
+          enum: [confirmed, cancelled, requires_action, null]
           description: |
-            État métier de l'appel après finalisation. `null` tant que
+            Résultat principal de l'appel. `confirmed` = la commande a été
+            confirmée par le client (avec ou sans modification — voir
+            `result_detail`). `cancelled` = la commande a été annulée
+            (par le client ou faux numéro). `requires_action` = aucune
+            décision automatique, le marchand doit traiter manuellement
+            (rappel, attente d'une date, audio inaudible, etc. — voir
+            `result_detail`). `null` tant que l'appel n'est pas terminé.
+        result_detail:
+          type: string
+          nullable: true
+          description: |
+            Nuance fine du résultat (slug texte libre). Exemples :
+            `modified` (commande confirmée avec modification),
+            `wrong_number`, `denied_order`, `human_requested`,
+            `price_dispute`, `postponed`, `callback`, `unconfirmed`,
+            `unclear`, `no_answer`, `failed`. `null` quand `result`
+            est `confirmed` ou `cancelled` sans nuance, ou tant que
             l'appel n'est pas terminé.
+        customer_mood:
+          type: string
+          nullable: true
+          enum: [positive, neutral, negative, frustrated, null]
+          description: |
+            Humeur perçue du client pendant l'appel. `null` si non
+            détectable ou tant que l'appel n'est pas terminé.
+        flags:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: |
+            Drapeaux qualitatifs levés pendant l'appel. Valeurs
+            courantes : `wrong_number`, `human_requested`, `price_dispute`,
+            `address_incomplete`, `denied_order`, `audio_quality_bad`,
+            `confirmed_by_relative`. Liste vide ou `null` si aucun drapeau.
+        preferences:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: |
+            Préférences ou demandes spécifiques exprimées par le client
+            (date de livraison souhaitée, créneau horaire, modification
+            produit, numéro alternatif, etc.). Format texte court, une
+            entrée par préférence. Liste vide ou `null` si aucune.
+        next_action:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: |
+            Action de suivi suggérée pour la boutique (ex. `rappeler à 16h`,
+            `envoyer SMS confirmation`). `null` si aucune action requise.
+        summary:
+          type: string
+          nullable: true
+          maxLength: 600
+          description: |
+            Résumé textuel de la conversation (1-3 phrases courtes).
+            Peut contenir des informations PII du client (nom, adresse)
+            telles qu'évoquées pendant l'appel. `null` tant que l'appel
+            n'est pas terminé.
         failure_reason:
           type: string
           nullable: true

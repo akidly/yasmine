@@ -289,18 +289,28 @@ Recette curl complète dans `docs/examples.md §3.3`.
 
 ## 4.5. Réconciliation après webhook perdu (P0-2)
 
-Si un webhook sortant est perdu (crash mid-retry — edge case accepté produit), polling `GET /v1/calls/{id}` quelques secondes plus tard donne **l'état complet** de l'appel — y compris le résultat métier (`result`) et la durée (`call_duration_seconds`, `billable_duration_seconds`) — sans dépendre du webhook. Cet endpoint est scopé tenant : un 404 `call_not_found` est renvoyé avec un body **byte-identique** que le call soit inexistant, propriété d'un autre reseller, ou que le path contienne un UUID syntaxiquement invalide.
+Si un webhook sortant est perdu (crash mid-retry — edge case accepté produit), polling `GET /v1/calls/{id}` quelques secondes plus tard donne **l'état complet** de l'appel — y compris la classification métier (`result` + `result_detail` + `customer_mood` + `flags` + `preferences` + `next_action` + `summary`) et la durée (`call_duration_seconds`, `billable_duration_seconds`) — sans dépendre du webhook. Cet endpoint est scopé tenant : un 404 `call_not_found` est renvoyé avec un body **byte-identique** que le call soit inexistant, propriété d'un autre reseller, ou que le path contienne un UUID syntaxiquement invalide.
 
 ```bash
 curl -H "Authorization: Bearer $YK" "$BASE/v1/calls/$CALL_ID" \
-  | jq '{call_status, result, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
+  | jq '{call_status, result, result_detail, customer_mood, flags, preferences, next_action, summary, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
 ```
 
 Champs clés à attendre une fois le call terminé :
 
 - `call_status` parmi `ended` / `failed` / `cancelled` (rail APPEL).
-- `result` parmi `CONFIRMED` / `CANCELLED` / `NO_ANSWER` / `UNCLEAR` / `FAILED` — état métier de la conversation. `null` tant que l'appel n'est pas terminé.
-- `failure_reason` + (si `result=FAILED`) `meta_error_code` / `meta_error_title` — diagnostic technique côté opérateur de messagerie.
+- `result` parmi `confirmed` / `cancelled` / `requires_action` — résultat principal de la conversation. `null` tant que l'appel n'est pas terminé.
+- `result_detail` — nuance fine (`modified`, `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`). Permet par exemple de distinguer un client qui veut être rappelé jeudi d'un audio inaudible — les deux étant `requires_action`.
+- `customer_mood`, `flags`, `preferences`, `next_action`, `summary` — détail conversationnel (cf §4.7 webhooks pour la sémantique).
+- `failure_reason` + (si `result=requires_action` avec `result_detail=failed`) `meta_error_code` / `meta_error_title` — diagnostic technique côté opérateur de messagerie.
+
+**Comment interpréter le résultat** :
+
+| `result`           | À faire côté boutique                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------|
+| `confirmed`        | Commande à expédier. Si `result_detail=modified`, appliquer la modification décrite dans `summary` / `preferences`. |
+| `cancelled`        | Commande annulée. Si `result_detail=wrong_number` ou `denied_order`, vérifier la fiche client (numéro / fraude potentielle). |
+| `requires_action`  | Le marchand doit traiter manuellement. Le `result_detail` indique pourquoi (rappel demandé, audio inaudible, demande humaine, no_answer, etc.). |
 
 ---
 

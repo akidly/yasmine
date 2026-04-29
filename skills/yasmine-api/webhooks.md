@@ -125,7 +125,13 @@ X-Yasmine-Event-Id: evt_01HTYE9Q4QK3M1B5X7Z2V8W6RF
   "livemode": true,
   "data": {
     "call_id": "d5a97d2b-1f3a-4c8b-9d51-2c3a4b5c6d7e",
-    "result": "CONFIRMED",
+    "result": "confirmed",
+    "result_detail": null,
+    "customer_mood": "positive",
+    "flags": [],
+    "preferences": [],
+    "next_action": null,
+    "summary": "Le client confirme la commande, livraison normale.",
     "duration_s": 37,
     "billable_s": 37
   }
@@ -518,14 +524,26 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 ```json
 {
   "call_id": "d5a97d2b-...",
-  "result": "CONFIRMED",
+  "result": "confirmed",
+  "result_detail": "modified",
+  "customer_mood": "positive",
+  "flags": ["confirmed_by_relative"],
+  "preferences": ["livraison mardi 14h", "appeler avant"],
+  "next_action": "rappeler mardi 13h45",
+  "summary": "La cliente confirme la commande, demande la livraison mardi 14h et un appel préalable.",
   "duration_s": 37,
   "billable_s": 37,
   "country": "DZ",
   "language": "ar"
 }
 ```
-- `result` parmi `CONFIRMED`, `CANCELLED`, `NO_ANSWER`, `VOICEMAIL`, `BUSY`, `UNCLEAR`, `FAILED`.
+- `result` parmi `confirmed` / `cancelled` / `requires_action`. `confirmed` = la commande est confirmée (à facturer normalement). `cancelled` = la commande est annulée. `requires_action` = aucune décision automatique, le marchand traite manuellement.
+- `result_detail` : nuance fine. Slugs courants : `modified` (commande confirmée avec une modification — cas type « oui mais en bleu », à facturer comme confirmée), `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`. `null` quand `result` est `confirmed` ou `cancelled` sans nuance particulière.
+- `customer_mood` parmi `positive` / `neutral` / `negative` / `frustrated`, ou `null` si non détectable.
+- `flags` : drapeaux qualitatifs levés pendant l'appel (liste, possiblement vide). Valeurs courantes : `wrong_number`, `human_requested`, `price_dispute`, `address_incomplete`, `denied_order`, `audio_quality_bad`, `confirmed_by_relative`.
+- `preferences` : préférences ou demandes spécifiques exprimées par le client (date de livraison souhaitée, créneau, modification produit, numéro alternatif…). Liste de chaînes courtes, possiblement vide.
+- `next_action` : action de suivi suggérée pour la boutique, ou `null`.
+- `summary` : résumé textuel de la conversation (1-3 phrases courtes). Peut contenir des informations PII du client (nom, adresse) telles qu'évoquées pendant l'appel.
 - `duration_s` : durée totale de l'appel côté plateforme.
 - `billable_s` : secondes décomptées du solde reseller.
 - `country` (depuis le Lot 2 chantier pays × langue) : code ISO 3166-1 alpha-2 (`MA`/`DZ`/`TN`/`FR`), echo de la valeur fournie à la création. Absent sur les appels antérieurs au Lot 2.
@@ -609,7 +627,7 @@ call.request.template_sent
         → call.started
           → call.ringing
             → call.connected
-              → call.ended (result=CONFIRMED|CANCELLED|...)
+              → call.ended (result=confirmed|cancelled|requires_action)
 ```
 Les events du rail TEMPLATE (`template_sent` / `template_delivered` / `template_read`) sont émis progressivement selon les signaux de la plateforme WhatsApp. Le `template_delivered` peut arriver collapsé avec `template_read` si le client est déjà dans le chat ouvert.
 
@@ -617,7 +635,7 @@ Les events du rail TEMPLATE (`template_sent` / `template_delivered` / `template_
 Si le rail DEMANDE termine en échec (`call.request.{refused,expired,quota_blocked,permission_revoked,permission_auto_revoked,template_delivery_failed,service_unavailable}`), **aucun event** du rail APPEL ne sera émis — la demande ne s'est jamais traduite en composition d'appel. Respecté structurellement côté Yasmine.
 
 ### Distinction `call.cancelled` vs `call.ended` vs `call.failed` vs `service_unavailable`
-- `call.ended` = l'appel s'est terminé naturellement (client a raccroché, IA a conclu, timeout normal). `result` défini (CONFIRMED/CANCELLED/NO_ANSWER/...).
+- `call.ended` = l'appel s'est terminé naturellement (client a raccroché, IA a conclu, timeout normal). `result` défini (`confirmed` / `cancelled` / `requires_action`).
 - `call.cancelled` = le reseller a explicitement appelé `POST /v1/calls/{id}/cancel`. Toujours volontaire côté Yasmine.
 - `call.failed` = échec côté plateforme ou côté client (5xx réseau, reclaim lifespan, projection janitor, crash origination, refus client avant accept). Aucune facturation.
 - `call.request.service_unavailable` = problème transitoire côté Yasmine (compte / template / saturation). Aucune facturation. Distinct de `call.failed` pour aider le reseller à savoir s'il peut retenter ou non.

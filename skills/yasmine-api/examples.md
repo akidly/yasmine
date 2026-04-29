@@ -380,10 +380,16 @@ curl -H "Authorization: Bearer $YK" \
 # Lecture d'un appel — scoped tenant, 404 anti-énum si autre reseller / inconnu / UUID invalide
 curl -H "Authorization: Bearer $YK" \
   "$BASE/v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862" \
-  | jq '{call_status, result, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
+  | jq '{call_status, result, result_detail, customer_mood, flags, preferences, next_action, summary, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
 # {
 #   "call_status": "ended",
-#   "result": "CONFIRMED",
+#   "result": "confirmed",
+#   "result_detail": "modified",
+#   "customer_mood": "positive",
+#   "flags": [],
+#   "preferences": ["t-shirt couleur bleue", "livraison mardi 14h"],
+#   "next_action": null,
+#   "summary": "La cliente confirme la commande mais demande le t-shirt en bleu et la livraison mardi 14h.",
 #   "ended_at": "2026-04-21T14:31:57Z",
 #   "call_duration_seconds": 37,
 #   "billable_duration_seconds": 37,
@@ -392,12 +398,16 @@ curl -H "Authorization: Bearer $YK" \
 #   "meta_error_title": null
 # }
 
+# Filtrer la liste : commandes confirmées d'une boutique
+curl -H "Authorization: Bearer $YK" \
+  "$BASE/v1/calls?status=ended&result=confirmed&merchant_id=$MID&limit=50"
+
 # Consulter le solde courant
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me/balance"
 # {"balance_seconds":3540,"currency":null,"updated_at":"2026-04-21T14:32:11Z"}
 ```
 
-`GET /v1/calls/{id}` est utile pour **réconcilier** après un webhook perdu : le crash mid-retry est un edge case accepté produit (`CHANGELOG.md` C6 Phase 2). Si vous voyez un appel `accepted` mais jamais `ended` côté votre webhook, polling cet endpoint quelques secondes plus tard donne **l'état terminal complet** : `call_status` (`ended`/`failed`/`cancelled`), `result` (`CONFIRMED`/`CANCELLED`/`NO_ANSWER`/`UNCLEAR`/`FAILED`), `call_duration_seconds`, `billable_duration_seconds`, `failure_reason` et — pour `result=FAILED` — `meta_error_code` + `meta_error_title`.
+`GET /v1/calls/{id}` est utile pour **réconcilier** après un webhook perdu : le crash mid-retry est un edge case accepté produit (`CHANGELOG.md` C6 Phase 2). Si vous voyez un appel `accepted` mais jamais `ended` côté votre webhook, polling cet endpoint quelques secondes plus tard donne **l'état terminal complet** : `call_status` (`ended`/`failed`/`cancelled`), classification métier (`result`/`result_detail`/`customer_mood`/`flags`/`preferences`/`next_action`/`summary`), `call_duration_seconds`, `billable_duration_seconds`, `failure_reason` et — pour `result=requires_action` avec `result_detail=failed` issu d'un échec opérateur — `meta_error_code` + `meta_error_title`.
 
 Le 404 `call_not_found` ne distingue PAS un appel inexistant d'un appel appartenant à un autre reseller — anti-énumération volontaire.
 

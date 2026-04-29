@@ -6,6 +6,10 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- **Classification d'appel enrichie** : `result` simplifié à 3 valeurs (`confirmed` / `cancelled` / `requires_action`, en minuscules), nouveaux champs `result_detail`, `customer_mood`, `flags`, `preferences`, `next_action`, `summary` exposés dans `CallOut` (`POST /v1/calls`, `GET /v1/calls`, `GET /v1/calls/{id}`) et dans le payload `data` du webhook `call.ended`. **Fix** : un appel modifié (« oui mais en bleu ») est désormais classé `result=confirmed` + `result_detail=modified` et déclenche la transition `orders.status=CONFIRMED` — il était auparavant rangé en `UNCLEAR` sans transition. Un faux numéro ou un client qui nie la commande est désormais explicitement `result=cancelled` + `result_detail=wrong_number|denied_order` (avant : `UNCLEAR` indistinguable d'un audio inaudible). Le filtre `?result=` est ajouté à `GET /v1/calls`. Détails et exemples : `docs/webhooks.md` §7, `docs/getting-started.md` §4.5, `docs/examples.md` §3.5.
+
 ### Added
 
 - **Pays + langue exposés sur les events terminaux** (`call.ended`, `call.cancelled`, `call.failed`) : le payload `data` embarque désormais `country` (`MA`/`DZ`/`TN`/`FR`) et `language` (`ar`/`fr`). Pratique typiquement quand vous n'aviez pas spécifié `language` à la création — vous récupérez la langue locale du pays appliquée par défaut. Champs ajoutés en fin de payload, l'ordre des champs existants ne change pas. Aucun handler reseller existant ne casse. Les events intermédiaires (`call.started`, `call.ringing`, `call.connected`) et les events pré-appel (`call.request.*`) **ne portent pas** ces champs : intentionnel, vous avez déjà ces informations depuis votre requête de création. Détails et exemples : `docs/webhooks.md` §7.
@@ -35,11 +39,10 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la po
 ### Changed (BREAKING)
 
 - Schéma `CallOut` (réponse `POST /v1/calls`, `GET /v1/calls/{id}`, `GET /v1/calls`) refondu :
-  - **Ajouts** : `result` (état métier de l'appel : `CONFIRMED`/`CANCELLED`/`NO_ANSWER`/`UNCLEAR`/`FAILED`), `call_duration_seconds` (durée réelle de la conversation), `meta_error_code` + `meta_error_title` (raison technique des échecs côté opérateur de messagerie).
+  - **Ajouts** : `result` (état métier de l'appel — domaine refondu en classification enrichie ci-dessus, voir bloc `Changed (BREAKING)` en tête de `[Unreleased]`), `call_duration_seconds` (durée réelle de la conversation), `meta_error_code` + `meta_error_title` (raison technique des échecs côté opérateur de messagerie).
   - **Renommé** : `billed_seconds` → `billable_duration_seconds` (plus expressif et symétrique avec `call_duration_seconds`).
   - **Retiré** : `status` (champ legacy dérivé). Utiliser `request_status` + `call_status` à la place.
   - Ferme le drift contractuel où le polling `GET /v1/calls/{id}`, présenté comme fallback aux webhooks perdus, ne renvoyait pas le résultat métier de l'appel.
-  - Aucune migration DB nécessaire — toutes les colonnes existent déjà.
 
 ### Changed
 
