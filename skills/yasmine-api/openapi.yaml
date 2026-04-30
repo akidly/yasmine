@@ -1771,9 +1771,11 @@ components:
         customer_mood:
           type: string
           nullable: true
-          enum: [positive, neutral, negative, frustrated, null]
+          enum: [positive, neutral, negative, frustrated, unclear, null]
           description: |
-            Humeur perçue du client pendant l'appel. `null` si non
+            Humeur perçue du client pendant l'appel. `unclear` est posé
+            quand l'audio est globalement incompréhensible (corrélé
+            généralement avec `result_detail=unclear`). `null` si non
             détectable ou tant que l'appel n'est pas terminé.
         flags:
           type: array

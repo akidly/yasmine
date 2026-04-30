@@ -539,7 +539,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 ```
 - `result` parmi `confirmed` / `cancelled` / `requires_action`. `confirmed` = la commande est confirmée (à facturer normalement). `cancelled` = la commande est annulée. `requires_action` = aucune décision automatique, le marchand traite manuellement.
 - `result_detail` : nuance fine. Slugs courants : `modified` (commande confirmée avec une modification — cas type « oui mais en bleu », à facturer comme confirmée), `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`. `null` quand `result` est `confirmed` ou `cancelled` sans nuance particulière.
-- `customer_mood` parmi `positive` / `neutral` / `negative` / `frustrated`, ou `null` si non détectable.
+- `customer_mood` parmi `positive` / `neutral` / `negative` / `frustrated` / `unclear`, ou `null` si non détectable. `unclear` signale que l'audio était globalement incompréhensible (corrélé généralement avec `result_detail=unclear`).
 - `flags` : drapeaux qualitatifs levés pendant l'appel (liste, possiblement vide). Valeurs courantes : `wrong_number`, `human_requested`, `price_dispute`, `address_incomplete`, `denied_order`, `audio_quality_bad`, `confirmed_by_relative`.
 - `preferences` : préférences ou demandes spécifiques exprimées par le client (date de livraison souhaitée, créneau, modification produit, numéro alternatif…). Liste de chaînes courtes, possiblement vide.
 - `next_action` : action de suivi suggérée pour la boutique, ou `null`.

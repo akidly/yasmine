@@ -43,7 +43,7 @@ After a call ends, the `CallOut` and the `call.ended` webhook payload expose:
   - `cancelled` = the customer cancelled, OR `result_detail=wrong_number|denied_order` (treated as cancellation server-side).
   - `requires_action` = no automatic decision — the merchant must handle manually (callback, postponed date, unintelligible audio, no answer, etc.). Always check `result_detail` for the precise reason.
 - **`result_detail`** : free-text slug. Common values : `modified`, `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`. `null` when `result` is `confirmed` or `cancelled` without nuance.
-- **`customer_mood`** : `positive` / `neutral` / `negative` / `frustrated`, or `null`.
+- **`customer_mood`** : `positive` / `neutral` / `negative` / `frustrated` / `unclear`, or `null`. `unclear` signals that the audio was globally unintelligible (typically paired with `result_detail=unclear`).
 - **`flags`** : array of qualitative tags (e.g. `confirmed_by_relative`, `address_incomplete`, `audio_quality_bad`).
 - **`preferences`** : array of customer demands (e.g. `["delivery Tuesday 2pm", "call before"]`).
 - **`next_action`** : suggested follow-up for the merchant, or `null`.
