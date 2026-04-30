@@ -133,7 +133,8 @@ X-Yasmine-Event-Id: evt_01HTYE9Q4QK3M1B5X7Z2V8W6RF
     "next_action": null,
     "summary": "Le client confirme la commande, livraison normale.",
     "duration_s": 37,
-    "billable_s": 37
+    "billable_s": 37,
+    "recording_url": "/v1/calls/d5a97d2b-1f3a-4c8b-9d51-2c3a4b5c6d7e/recording"
   }
 }
 ```
@@ -533,6 +534,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "summary": "La cliente confirme la commande, demande la livraison mardi 14h et un appel préalable.",
   "duration_s": 37,
   "billable_s": 37,
+  "recording_url": "/v1/calls/d5a97d2b-.../recording",
   "country": "DZ",
   "language": "ar"
 }
@@ -546,6 +548,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 - `summary` : résumé textuel de la conversation (1-3 phrases courtes). Peut contenir des informations PII du client (nom, adresse) telles qu'évoquées pendant l'appel.
 - `duration_s` : durée totale de l'appel côté plateforme.
 - `billable_s` : secondes décomptées du solde reseller.
+- `recording_url` : URL **relative** pour télécharger l'enregistrement audio mixte (client + agent) au format WAV mono 16 kHz. Auth Bearer requise comme les autres endpoints `/v1`. Préfixer avec votre base URL d'API (`https://api.yasmine.akidly.com`). `null` si l'audio n'est pas (encore) disponible (cas rare : crash mid-write côté Yasmine). Rétention 30 jours, puis l'endpoint renvoie `410 Gone` (slug `recording_gone`).
 - `country` (depuis le Lot 2 chantier pays × langue) : code ISO 3166-1 alpha-2 (`MA`/`DZ`/`TN`/`FR`), echo de la valeur fournie à la création. Absent sur les appels antérieurs au Lot 2.
 - `language` (depuis le Lot 2 chantier pays × langue) : langue effectivement utilisée (`ar` ou `fr`). Pratique quand vous n'aviez pas spécifié `language` à la création — ce champ vous renvoie la langue locale du pays appliquée par défaut. Absent sur les appels antérieurs au Lot 2.
 

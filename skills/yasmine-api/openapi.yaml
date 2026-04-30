@@ -375,6 +375,66 @@ paths:
         "404": { $ref: "#/components/responses/CallNotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /v1/calls/{call_id}/recording:
+    get:
+      operationId: getCallRecording
+      summary: Télécharger l'enregistrement audio d'un appel
+      tags: [Calls]
+      x-status: live
+      x-rate-limit: "60/minute"
+      description: |
+        Stream le mix audio (client + agent) d'un appel terminé en WAV
+        mono 16 kHz, 16-bit PCM.
+
+        **Disponibilité** : seulement après que l'appel a atteint un état
+        terminal (`call_status=ended`). Le champ `recording_url` du
+        `CallOut` (cf `GET /v1/calls/{call_id}`) indique la disponibilité —
+        `null` si l'audio n'est pas (encore) prêt.
+
+        **Rétention** : 30 jours après la fin de l'appel. Au-delà, le
+        fichier est purgé et l'endpoint renvoie `410 Gone` avec le slug
+        `recording_gone` (distinct du `404 call_not_found` pour permettre
+        au reseller de différencier « jamais existé » vs « purgé »).
+
+        **Anti-énumération** : quatre cas renvoient un 404
+        `call_not_found` byte-identique :
+        - UUID syntaxiquement invalide
+        - UUID inconnu
+        - UUID propriété d'un autre reseller
+        - artifact pas encore créé (call jamais finalisé)
+
+        **Format** : WAV non compressé, mono, 16 kHz. ~32 KB/s soit
+        ~2 MB pour 60s. Header `Content-Disposition: attachment;
+        filename="<call_id>.wav"`.
+
+        **Rate limit** : 60 req/min — plus restrictif que les endpoints
+        JSON (audio plus lourd, on protège la bande passante). Cacher
+        localement côté reseller.
+      parameters:
+        - $ref: "#/components/parameters/CallId"
+      responses:
+        "200":
+          description: Stream WAV (mono, 16 kHz, 16-bit PCM).
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: 'attachment; filename="<call_id>.wav"'
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/CallNotFound" }
+        "410":
+          description: |
+            L'enregistrement a été purgé après la fenêtre de rétention
+            (30 jours).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   /v1/calls/{call_id}/cancel:
     post:
       operationId: cancelCall
@@ -1834,6 +1894,18 @@ components:
             Libellé textuel de l'erreur opérateur correspondant à
             `meta_error_code`. Renseigné uniquement quand `result=FAILED`
             et que l'opérateur a fourni un libellé. `null` sinon.
+        recording_url:
+          type: string
+          nullable: true
+          description: |
+            URL **relative** pour télécharger l'enregistrement audio
+            mixte (client + agent) au format WAV mono 16 kHz.
+            Format : `/v1/calls/{call_id}/recording`. Authentification
+            Bearer identique aux autres endpoints `/v1`. `null` tant
+            que l'appel n'est pas terminé, ou si l'audio a été purgé
+            après la fenêtre de rétention (30 jours). L'endpoint peut
+            renvoyer `410 Gone` (slug `recording_gone`) dans ce dernier
+            cas.
         cancelled_state:
           type: string
           nullable: true

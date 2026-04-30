@@ -48,6 +48,7 @@ After a call ends, the `CallOut` and the `call.ended` webhook payload expose:
 - **`preferences`** : array of customer demands (e.g. `["delivery Tuesday 2pm", "call before"]`).
 - **`next_action`** : suggested follow-up for the merchant, or `null`.
 - **`summary`** : 1-3 sentence summary of the conversation. May contain customer PII (name, address) as evoked during the call.
+- **`recording_url`** : relative URL to download the call audio (mix of customer + agent). Path : `/v1/calls/{call_id}/recording`. Same Bearer auth as other `/v1` endpoints. `null` until the call ends, or after the 30-day retention window. Format : WAV mono 16 kHz 16-bit PCM (~32 KB/s, ~2 MB for 60s). Rate limit 60 req/min on this endpoint. Returns `410 Gone` with slug `recording_gone` when the audio has been purged.
 
 ## Common error slugs (RFC 7807)
 
@@ -59,7 +60,8 @@ After a call ends, the `CallOut` and the `call.ended` webhook payload expose:
 | `insufficient_balance` | 402 | Reseller balance < 10s |
 | `idempotency_key_conflict` | 409 | Same key, different body |
 | `invalid_cursor` / `cursor_expired` | 400 | Pagination cursor malformed/expired (TTL 24h) |
-| `call_not_found` | 404 | UUID invalid OR call belongs to another reseller (anti-enum, byte-identical) |
+| `call_not_found` | 404 | UUID invalid OR call belongs to another reseller OR recording not yet produced (anti-enum, byte-identical) |
+| `recording_gone` | 410 | Call recording purged after the 30-day retention window |
 
 For full Causes / Remediation / Example call the MCP tool `explain_error(slug)`.
 

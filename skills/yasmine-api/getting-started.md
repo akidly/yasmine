@@ -302,6 +302,7 @@ Champs clés à attendre une fois le call terminé :
 - `result` parmi `confirmed` / `cancelled` / `requires_action` — résultat principal de la conversation. `null` tant que l'appel n'est pas terminé.
 - `result_detail` — nuance fine (`modified`, `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`). Permet par exemple de distinguer un client qui veut être rappelé jeudi d'un audio inaudible — les deux étant `requires_action`.
 - `customer_mood`, `flags`, `preferences`, `next_action`, `summary` — détail conversationnel (cf §4.7 webhooks pour la sémantique).
+- `recording_url` — URL relative pour télécharger l'enregistrement audio (cf §4.6 ci-dessous). `null` tant que l'appel n'est pas terminé ou si l'audio a été purgé.
 - `failure_reason` + (si `result=requires_action` avec `result_detail=failed`) `meta_error_code` / `meta_error_title` — diagnostic technique côté opérateur de messagerie.
 
 **Comment interpréter le résultat** :
@@ -311,6 +312,31 @@ Champs clés à attendre une fois le call terminé :
 | `confirmed`        | Commande à expédier. Si `result_detail=modified`, appliquer la modification décrite dans `summary` / `preferences`. |
 | `cancelled`        | Commande annulée. Si `result_detail=wrong_number` ou `denied_order`, vérifier la fiche client (numéro / fraude potentielle). |
 | `requires_action`  | Le marchand doit traiter manuellement. Le `result_detail` indique pourquoi (rappel demandé, audio inaudible, demande humaine, no_answer, etc.). |
+
+---
+
+## 4.6. Récupérer l'enregistrement audio d'un appel
+
+Une fois l'appel terminé, le `CallOut` retourne un champ `recording_url` qui pointe vers l'audio mixte (client + agent) au format WAV. Authentification Bearer identique aux autres endpoints `/v1`.
+
+```bash
+# 1. Lire l'état de l'appel + récupérer l'URL relative
+RECORDING_PATH=$(curl -s -H "Authorization: Bearer $YK" \
+  "$BASE/v1/calls/$CALL_ID" | jq -r '.recording_url')
+
+# 2. Télécharger le WAV (si recording_url ≠ null)
+curl -H "Authorization: Bearer $YK" \
+  -o "$CALL_ID.wav" \
+  "$BASE$RECORDING_PATH"
+```
+
+**Format** : WAV mono 16 kHz 16-bit PCM. ~32 KB/s, soit ~2 MB pour 60s d'appel. Header `Content-Disposition: attachment; filename="<call_id>.wav"`.
+
+**Disponibilité** : `recording_url` est `null` tant que l'appel n'est pas dans un état terminal (`call_status=ended`). Le webhook `call.ended` contient aussi `recording_url` dans son payload `data` — pratique pour traiter l'audio dès la fin de l'appel sans polling.
+
+**Rétention** : 30 jours. Au-delà, l'endpoint renvoie `410 Gone` (slug `recording_gone`) et le champ `recording_url` repasse à `null` côté `CallOut`. Si vous avez besoin d'archiver les enregistrements plus longtemps, téléchargez-les côté reseller dès réception du `call.ended` et stockez-les chez vous.
+
+**Rate limit** : 60 req/min sur cet endpoint (plus restrictif que les endpoints JSON, audio plus lourd). Cacher localement après le premier téléchargement.
 
 ---
 

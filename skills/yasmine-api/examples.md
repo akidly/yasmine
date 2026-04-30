@@ -380,7 +380,7 @@ curl -H "Authorization: Bearer $YK" \
 # Lecture d'un appel — scoped tenant, 404 anti-énum si autre reseller / inconnu / UUID invalide
 curl -H "Authorization: Bearer $YK" \
   "$BASE/v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862" \
-  | jq '{call_status, result, result_detail, customer_mood, flags, preferences, next_action, summary, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
+  | jq '{call_status, result, result_detail, customer_mood, flags, preferences, next_action, summary, recording_url, ended_at, call_duration_seconds, billable_duration_seconds, failure_reason, meta_error_code, meta_error_title}'
 # {
 #   "call_status": "ended",
 #   "result": "confirmed",
@@ -390,6 +390,7 @@ curl -H "Authorization: Bearer $YK" \
 #   "preferences": ["t-shirt couleur bleue", "livraison mardi 14h"],
 #   "next_action": null,
 #   "summary": "La cliente confirme la commande mais demande le t-shirt en bleu et la livraison mardi 14h.",
+#   "recording_url": "/v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862/recording",
 #   "ended_at": "2026-04-21T14:31:57Z",
 #   "call_duration_seconds": 37,
 #   "billable_duration_seconds": 37,
@@ -397,6 +398,13 @@ curl -H "Authorization: Bearer $YK" \
 #   "meta_error_code": null,
 #   "meta_error_title": null
 # }
+
+# Télécharger l'enregistrement audio (mix client + agent, WAV mono 16 kHz)
+curl -H "Authorization: Bearer $YK" \
+  -o "dcaebcdd.wav" \
+  "$BASE/v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862/recording"
+# → fichier WAV ~2 MB pour 60s. Rétention 30 jours.
+# 410 Gone si l'audio a été purgé après rétention (slug `recording_gone`).
 
 # Filtrer la liste : commandes confirmées d'une boutique
 curl -H "Authorization: Bearer $YK" \
