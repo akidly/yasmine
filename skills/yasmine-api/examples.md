@@ -71,7 +71,7 @@ Le sous-objet `customer` accepte aussi `gender`, `email`, `notes`, `language` �
 
 ## 1.bis Commande à plusieurs articles — liste structurée
 
-Quand la commande contient plusieurs articles distincts à citer un par un, utilisez `order.items` (tableau, max 50 entrées). Chaque article expose `name` (requis), `quantity` (défaut 1), `variant` et `unit_price` (optionnels).
+Quand la commande contient plusieurs articles distincts à citer un par un, utilisez `order.items` (tableau, max 50 entrées). Chaque article expose `name` (requis), puis en optionnel : `quantity` (défaut 1), `variants` (paires nom/valeur, max 3 — ex. `{"name": "Taille", "value": "XXL"}`), `description` (texte libre ≤ 500, sert à répondre aux questions du client sur l'article) et `unit_price`.
 
 ```bash
 curl -X POST "$BASE/v1/calls" \
@@ -91,7 +91,7 @@ curl -X POST "$BASE/v1/calls" \
       "external_id": "CMD-2026-00790",
       "delivery_address": "12 Rue X, Casablanca",
       "items": [
-        { "name": "T-shirt blanc en coton", "quantity": 2, "variant": "XXL", "unit_price": "120.00" },
+        { "name": "T-shirt blanc en coton", "quantity": 2, "variants": [{ "name": "Taille", "value": "XXL" }, { "name": "Couleur", "value": "blanc" }], "description": "T-shirt col rond 100% coton, coupe droite.", "unit_price": "120.00" },
         { "name": "Jean noir slim", "quantity": 1, "unit_price": "320.00" }
       ],
       "amount": "560.00",

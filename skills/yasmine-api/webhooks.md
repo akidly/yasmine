@@ -235,7 +235,7 @@ curl -H "Authorization: Bearer $YK" \
 
 Transparent pour le reseller — documenté pour information.
 
-- **Pas de suivi de redirect** (`follow_redirects=False` httpx). Un `3xx` est traité comme un échec → retry. Si votre endpoint répond en 3xx vers une autre URL, configurez l'URL finale directement via `POST /v1/me/webhooks` au lieu d'attendre que Yasmine la suive.
+- **Pas de suivi de redirection**. Un `3xx` est traité comme un échec → retry. Si votre endpoint répond en 3xx vers une autre URL, configurez l'URL finale directement via `POST /v1/me/webhooks` au lieu d'attendre que Yasmine la suive.
 - **Body response borné à 1024 bytes**. Yasmine lit votre réponse en streaming et coupe le flux dès 1024 B reçus. Inutile de renvoyer du contenu volumineux — un `200 OK` vide suffit. Le body tronqué est stocké dans `webhook_deliveries.response_body` côté Yasmine pour debug ops.
 - **Anti-GC sur retries** : nos tentatives 2/3 (à +30 s / +5 min) sont protégées par un `set[asyncio.Task]` module-level, donc elles arrivent même si le process est sous charge.
 

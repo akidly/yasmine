@@ -46,7 +46,7 @@ Content-Type: application/problem+json
 
 Certains `type` ajoutent des champs dédiés :
 
-- `validation_error` : `errors` = liste des erreurs Pydantic `[{loc, msg, type}]`.
+- `validation_error` : `errors` = liste des erreurs de validation `[{loc, msg, type}]`.
 - `insufficient_balance` : `balance_seconds`, `required_seconds`.
 - `rate_limit_exceeded` : header `Retry-After` + champ `retry_after` (secondes). Aussi `X-RateLimit-Limit`, `X-RateLimit-Remaining: 0`, `X-RateLimit-Reset` (unix timestamp).
 
@@ -72,7 +72,7 @@ Certains `type` ajoutent des champs dédiés :
 | `invalid_period_format` | 400 | `GET /v1/me/usage?period=...` avec format non-`YYYY-MM` ou mois hors 01-12 (P1-1). Exemple : `?period=abc`, `?period=2026-13`, `?period=2026-00`. Remédiation : utiliser le format strict ou omettre (défaut = mois courant UTC). |
 | `invalid_cursor` | 400 | `GET /v1/calls?cursor=...` ou `GET /v1/me/transactions?cursor=...` avec curseur malformé, signature tampered, ou `CURSOR_SIGNING_KEY` tournée côté serveur (P1-3). Le client refait la 1re requête sans `cursor`. |
 | `cursor_expired` | 400 | Curseur > 24 h (TTL fixe, P1-3). Même remédiation : refaire la 1re requête sans `cursor`. |
-| `payload_too_large` | 413 | Émis sur `POST /webhooks/whatsapp` quand le body dépasse 256 KiB (#P0-6). En pratique Meta envoie ~50 KB. Si vous voyez ce code côté Meta retry storm, contacter le support — c'est probablement un payload falsifié ou un bug Meta inattendu. **Pas applicable aux endpoints `/v1/*`** (qui ont leur propre validation Pydantic). |
+| `payload_too_large` | 413 | Émis sur `POST /webhooks/whatsapp` quand le corps dépasse 256 KiB. En pratique Meta envoie ~50 Ko. Si vous voyez ce code lors d'une rafale de retries Meta, contactez le support — il s'agit probablement d'un payload falsifié ou d'une anomalie côté Meta. **Pas applicable aux endpoints `/v1/*`**, qui ont leur propre validation. |
 | `validation_error` | 422 | Payload mal formé. Voir `errors`. |
 | `language_not_supported_for_country` | 422 | `POST /v1/calls` avec une combinaison `(country, language)` non disponible. Aujourd'hui : `country=FR` + `language=ar`. Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. Omettre `language` pour appliquer la langue par défaut du pays. |
 | `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé (M3.6 C7). Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
@@ -97,7 +97,7 @@ l'identifiant stable à utiliser côté SDK pour router une classe d'erreur
 ## Hors `/v1/`
 
 Les endpoints hors `/v1/*` (actuellement uniquement les webhooks Meta
-`POST /webhooks/whatsapp`) gardent le format legacy FastAPI :
+`POST /webhooks/whatsapp`) gardent un format d'erreur historique :
 
 ```json
 {"detail": "invalid signature"}
@@ -125,7 +125,7 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
 
 **Remediation** :
 - Valider le body côté client avant envoi (générateur OpenAPI, Pydantic, JSON Schema).
-- Lire le tableau `errors[]` dans la réponse pour le détail par champ : `errors[i].loc` = chemin (ex. `["body", "customer", "phone_number"]` pour un champ nested), `errors[i].msg` = message Pydantic, `errors[i].type` = code Pydantic.
+- Lire le tableau `errors[]` dans la réponse pour le détail par champ : `errors[i].loc` = chemin (ex. `["body", "customer", "phone_number"]` pour un champ nested), `errors[i].msg` = message lisible, `errors[i].type` = code de la règle violée.
 - Sur les enums, prendre la valeur exacte depuis `docs/openapi.yaml` (les `enum:` sont normatifs).
 
 **Example** :

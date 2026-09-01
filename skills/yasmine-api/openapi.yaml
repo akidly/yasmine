@@ -150,7 +150,25 @@ paths:
                     items:
                       - name: "T-shirt blanc en coton"
                         quantity: 2
-                        variant: "XXL"
+                        variants:
+                          - name: "Taille"
+                            value: "XXL"
+                          - name: "Couleur"
+                            value: "blanc"
+                        available_variants:
+                          - - name: "Taille"
+                              value: "XXL"
+                            - name: "Couleur"
+                              value: "blanc"
+                          - - name: "Taille"
+                              value: "XL"
+                            - name: "Couleur"
+                              value: "blanc"
+                          - - name: "Taille"
+                              value: "M"
+                            - name: "Couleur"
+                              value: "noir"
+                        description: "T-shirt col rond 100% coton, coupe droite."
                         unit_price: "120.00"
                       - name: "Jean noir slim"
                         quantity: 1
@@ -282,11 +300,11 @@ paths:
             type: string
             enum: [queued, dialing, in_progress, ended, failed]
           description: |
-            Filtre exact sur `calls.status` (colonne PostgreSQL GENERATED
-            STORED, dérivée des rails `request_status` + `call_status`).
+            Filtre exact sur le statut de l'appel, dérivé de
+            `request_status` et `call_status`.
             Mapping :
-            - `queued` — en attente de permission (rails `queued` /
-              `waiting_user_permission`).
+            - `queued` — en attente de permission (`request_status` parmi
+              `queued` / `waiting_user_permission`).
             - `dialing` — permission acceptée, numérotation en cours
               (`call_status` parmi `not_started`/`dialing`/`ringing`).
             - `in_progress` — client décroché (`call_status = connected`).
@@ -1474,6 +1492,17 @@ components:
         shop_sav_hours: { type: string, nullable: true, maxLength: 100 }
         shop_address: { type: string, nullable: true, maxLength: 250 }
         delivery_policy: { type: string, nullable: true, maxLength: 250 }
+        delivery_delay:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: >-
+            Délai générique de livraison de la boutique (ex. « 8 heures »,
+            « 24-48h »). Utilisé pour répondre au client qui demande quand
+            sa commande arrivera, lorsque la commande n'a pas de
+            `estimated_delivery_date` (la date de la commande reste
+            prioritaire). Distinct de `delivery_policy` (politique et
+            conditions de livraison).
         payment_policy: { type: string, nullable: true, maxLength: 250 }
         return_policy: { type: string, nullable: true, maxLength: 250 }
         size_exchange_policy: { type: string, nullable: true, maxLength: 250 }
@@ -1503,11 +1532,72 @@ components:
           maximum: 999
           default: 1
           description: Nombre d'unités pour cet article. Défaut 1.
-        variant:
+        variants:
+          type: array
+          nullable: true
+          maxItems: 3
+          description: |
+            Variantes nommées de l'article (max 3). Chaque entrée est une
+            paire `name` (type — "Taille", "Couleur", "Pointure", ... ou
+            un type libre) + `value` ("XL", "rouge"). Citées au client
+            sous la forme « Taille : XL ».
+          items:
+            type: object
+            required: [name, value]
+            additionalProperties: false
+            properties:
+              name:
+                type: string
+                minLength: 1
+                maxLength: 40
+                description: Type de variante ("Taille", "Couleur", ...).
+              value:
+                type: string
+                minLength: 1
+                maxLength: 80
+                description: Valeur ("XL", "rouge").
+        available_variants:
+          type: array
+          nullable: true
+          maxItems: 60
+          description: |
+            Combinaisons de variantes réellement disponibles pour cet
+            article (max 60). Chaque combinaison est une liste de paires
+            `name`/`value` (1 à 3, mêmes axes que `variants`). Fournir la
+            liste des combinaisons qui existent, pas le produit cartésien :
+            elle exprime les croisements — une couleur peut n'être
+            disponible que dans certaines tailles. Quand ce champ est
+            présent, l'agent ne propose et n'accepte QUE ces combinaisons ;
+            toute autre valeur est annoncée comme indisponible. Absent :
+            l'agent s'appuie sur `description` et les infos boutique,
+            sinon sur la seule variante commandée.
+          items:
+            type: array
+            minItems: 1
+            maxItems: 3
+            items:
+              type: object
+              required: [name, value]
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 40
+                  description: Type de variante ("Taille", "Couleur", ...).
+                value:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                  description: Valeur ("XL", "rouge").
+        description:
           type: string
           nullable: true
-          maxLength: 80
-          description: Variante (taille, couleur, ...). Ex. "XXL", "rouge".
+          maxLength: 500
+          description: |
+            Description libre du produit (matière, contenu, usage...).
+            Sert à répondre aux questions du client sur l'article ;
+            n'est pas récitée d'office.
         unit_price:
           type: string
           nullable: true
@@ -1519,12 +1609,15 @@ components:
           examples: ["120.00"]
     OrderInput:
       type: object
-      required: [delivery_address, amount, currency]
+      required: [amount, currency]
       additionalProperties: false
       description: |
         Sous-objet `order` (Phase 2-final). Commande du client : logistique,
-        montants, métadata commerciale. `delivery_address`, `amount`,
-        `currency` requis. `external_id` optionnel — génération fallback
+        montants, métadata commerciale. `amount` et `currency` requis.
+        `delivery_address` optionnelle depuis 2026-08-22 : absente (ou
+        réduite à un nom de ville), l'agent collecte l'adresse auprès du
+        client pendant l'appel et la remonte dans `preferences` du compte
+        rendu. `external_id` optionnel — génération fallback
         côté serveur si absent. **INSERT strict** : un 2e POST avec même
         `(merchant_id, external_id)` retourne `409 order_external_id_already_exists`.
 
@@ -1545,9 +1638,12 @@ components:
           description: ID commande côté reseller, unique par merchant.
         delivery_address:
           type: string
-          minLength: 1
+          nullable: true
           maxLength: 500
-          description: Adresse de livraison complète.
+          description: |
+            Adresse de livraison. Optionnelle : si absente ou réduite à un
+            nom de ville, l'agent la collecte pendant l'appel (l'adresse
+            confirmée remonte dans `preferences` du compte rendu).
         items:
           type: array
           nullable: true
@@ -1556,7 +1652,8 @@ components:
             $ref: "#/components/schemas/OrderItem"
           description: |
             Liste structurée d'articles (max 50). Chaque entrée : `name`
-            requis + `quantity` (défaut 1) + `variant` + `unit_price`
+            requis + `quantity` (défaut 1) + `variants` (paires
+            nom/valeur, max 3) + `description` + `unit_price`
             optionnels. Laisser absent ou `null` pour une commande sans
             détail structuré (utiliser `items_text` à la place).
         items_text:
@@ -2110,7 +2207,7 @@ components:
         transaction_id:
           type: integer
           format: int64
-          description: ID interne BigInteger — stable + ordonné.
+          description: Identifiant interne, stable et ordonné.
         type:
           type: string
           enum: [topup, debit_call, refund, adjustment]
@@ -2203,7 +2300,7 @@ components:
         delivery_id:
           type: integer
           format: int64
-          description: ID interne BigInt — stable + ordonné.
+          description: Identifiant interne, stable et ordonné.
         event_type:
           type: string
           description: |

@@ -79,7 +79,7 @@ Les sous-objets `customer`, `shop_info`, `order`, `call_params` acceptent d'autr
 
 **Détail commande — deux formats au choix** :
 - **`order.items_text`** (chaîne libre, max 500 caractères) — recommandé pour les commandes à article unique, ou quand le détail n'est pas découpé côté reseller (ex. "t-shirt blanc et jean noir XXL").
-- **`order.items`** (tableau structuré, max 50 entrées avec `name` requis + `quantity`/`variant`/`unit_price` optionnels) — recommandé quand les articles sont déjà découpés côté reseller et que vous voulez que l'agent les cite un par un.
+- **`order.items`** (tableau structuré, max 50 entrées avec `name` requis + `quantity`/`variants`/`description`/`unit_price` optionnels — `variants` est une liste de paires nom/valeur, max 3, ex. `{"name": "Taille", "value": "XL"}`) — recommandé quand les articles sont déjà découpés côté reseller et que vous voulez que l'agent les cite un par un et sache répondre aux questions produit via `description`.
 
 Les deux peuvent cohabiter ; si les deux sont fournis, la liste structurée prime au moment de l'appel. Recette curl complète pour la liste structurée dans [`docs/examples.md §1.bis`](https://docs.yasmine.akidly.com/examples.md).
 
@@ -344,7 +344,7 @@ curl -H "Authorization: Bearer $YK" \
 
 Vous pouvez appeler `api.yasmine.akidly.com` depuis un navigateur (front JavaScript) **uniquement si l'URL de votre site est dans notre liste blanche CORS**. Par défaut, aucune origine n'est autorisée — il faut nous demander l'ajout via le support.
 
-**Comment demander l'ajout** : envoyez-nous l'URL exacte (scheme + host + port si non standard) de votre front, par exemple `https://portal.monreseller.com` ou `https://dashboard.example.com:8443`. Nous ajoutons l'origine dans `/opt/yasmine/.env` sur le VPS puis redémarrons l'API (zéro downtime côté API reseller). Compte typique : 1 origine par environnement (prod / staging).
+**Comment demander l'ajout** : envoyez-nous l'URL exacte (scheme + host + port si non standard) de votre front, par exemple `https://portal.monreseller.com` ou `https://dashboard.example.com:8443`. Nous ajoutons l'origine à la liste blanche côté serveur (mise en service sans interruption de l'API). Compte typique : 1 origine par environnement (prod / staging).
 
 **Contrat technique** pour votre front une fois l'origine ajoutée :
 - Méthodes autorisées : `GET`, `POST`, `DELETE`, `OPTIONS`.

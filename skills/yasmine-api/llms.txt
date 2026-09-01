@@ -12,11 +12,11 @@ La surface stable pour les intégrateurs est `/v1` servie sur `https://api.yasmi
 - [Errors](https://docs.yasmine.akidly.com/errors.md): Table RFC 7807 avec slugs stables et remédiations. Cf `/errors` (HTML) pour le rendu humain avec ancres par slug.
 - [Versioning](https://docs.yasmine.akidly.com/versioning.md): Politique `/v1 → /v2`, en-tête `X-API-Version`, dépréciation RFC 8594 (`Sunset`), cycle de vie minimum 6 mois.
 - [Integrations](https://docs.yasmine.akidly.com/integrations.md): Trois modes d'intégration : REST direct (backend / n8n / Zapier), MCP server (agents IA), plugin Claude Code (devs).
-- [OpenAPI spec](https://docs.yasmine.akidly.com/openapi.yaml): Spec contractuelle `/v1` — fait foi pour la forme exacte des payloads, schémas Pydantic, paramètres de query, codes d'erreur.
+- [OpenAPI spec](https://docs.yasmine.akidly.com/openapi.yaml): Spec contractuelle `/v1` — fait foi pour la forme exacte des payloads, schémas de données, paramètres de query, codes d'erreur.
 - [Changelog](https://docs.yasmine.akidly.com/CHANGELOG.md): Historique des livraisons visibles côté reseller (format Keep a Changelog). Bloc `[Unreleased]` cumule ce qui sera publié à la prochaine release.
 
 ## Optional
 
 - [llms-full.txt](https://docs.yasmine.akidly.com/llms-full.txt): Concaténation brute des docs reseller ci-dessus pour ingestion LLM en un seul fetch. Régénéré par `scripts/generate_llms_txt.py` à chaque modif de la doc source.
 - [Errors (HTML)](https://docs.yasmine.akidly.com/errors): Même catalogue que `errors.md`, rendu humain avec ancres par slug (`/errors#<slug>`).
-- [API Reference (Scalar)](https://docs.yasmine.akidly.com/reference): UI interactive OpenAPI avec try-it. 19 endpoints `live`.
+- [API Reference (Scalar)](https://docs.yasmine.akidly.com/reference): UI interactive OpenAPI avec try-it. 20 endpoints `live`.
