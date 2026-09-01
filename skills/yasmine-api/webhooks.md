@@ -4,7 +4,7 @@ Guide pour configurer et recevoir les notifications sortantes Yasmine.
 
 > Ce document décrit les webhooks **sortants** émis par Yasmine vers l'endpoint reseller. Les webhooks entrants (opérateurs de messagerie vers Yasmine) sont une implémentation interne et ne sont pas documentés ici.
 
-> **Statut M3.6 C6** :
+> **Statut** :
 > - **Phase 1 livrée (2026-04-20)** : `POST/GET/DELETE /v1/me/webhooks` self-service. Un reseller peut enregistrer son endpoint et récupérer son secret HMAC.
 > - **Phase 2 livrée (2026-04-20)** : émission réelle des events (initialement 11 events `call.*`) via dispatcher async + retry 3× (0s / 30s / 5min), timeout 10 s, SSRF re-check à chaque POST.
 > - **Phase 3 livrée (2026-04-26)** : enrichissement à **18 events `call.*`** — ajout du rail TEMPLATE (cycle de vie du message WhatsApp), distinction `permission_revoked` (manuelle) / `permission_auto_revoked` (système) / `permission_refused` (clic Refuser), nouveau `service_unavailable` qui isole les problèmes système Yasmine du `call.failed` générique.
@@ -59,7 +59,7 @@ curl -X DELETE https://api.yasmine.akidly.com/v1/me/webhooks \
 
 Réponse `204 No Content`. Soft-delete : la config passe en `active=false`, l'historique `webhook_deliveries` reste intact.
 
-### 1.4 Rotation du secret (P1-8)
+### 1.4 Rotation du secret
 
 Utiliser l'endpoint dédié — **pas besoin** de delete/recreate :
 
@@ -171,7 +171,7 @@ Après **3 échecs consécutifs**, l'event est abandonné. Le champ `error` de l
 
 Un event est considéré **livré** dès qu'un `2xx` est reçu. Tout `3xx`, `4xx`, `5xx`, timeout, ou erreur DNS/TLS = échec → retry.
 
-### Tester votre endpoint (P1-2)
+### Tester votre endpoint
 
 Avant d'attendre un vrai event en prod, vous pouvez forcer Yasmine à POSTer un `webhook.test` synchrone vers votre URL :
 
@@ -209,7 +209,7 @@ Filtrez côté votre code sur `data.test === true` pour ignorer ces événements
 
 **Timeout 5 s, pas de retry**, **rate-limit 10/min** (cumulé avec 600/min global). Toutes les tentatives sont tracées dans `webhook_deliveries` avec `event_type='webhook.test'` (visibles via `GET /v1/me/webhooks/deliveries`).
 
-### Auditer vos livraisons (P1-2)
+### Auditer vos livraisons
 
 ```bash
 # Liste paginée des dernières livraisons (tous events, défaut 50, max 200).
@@ -231,12 +231,12 @@ curl -H "Authorization: Bearer $YK" \
 
 11 champs exposés par ligne : `delivery_id`, `event_type`, `target_url`, `http_status`, `latency_ms`, `attempt_count`, `status` (`delivered`/`failed`/`pending`), `next_retry_at`, `created_at`, `last_attempted_at`, `error_message` (tronqué 200 chars). Anti-BOPLA strict : ni `response_body`, ni `signature_sent`, ni headers internes.
 
-### Garde-fous techniques côté Yasmine (P0-5)
+### Garde-fous techniques côté Yasmine
 
 Transparent pour le reseller — documenté pour information.
 
 - **Pas de suivi de redirection**. Un `3xx` est traité comme un échec → retry. Si votre endpoint répond en 3xx vers une autre URL, configurez l'URL finale directement via `POST /v1/me/webhooks` au lieu d'attendre que Yasmine la suive.
-- **Body response borné à 1024 bytes**. Yasmine lit votre réponse en streaming et coupe le flux dès 1024 B reçus. Inutile de renvoyer du contenu volumineux — un `200 OK` vide suffit. Le body tronqué est stocké dans `webhook_deliveries.response_body` côté Yasmine pour debug ops.
+- **Body response borné à 1024 bytes**. Yasmine lit votre réponse en streaming et coupe le flux dès 1024 B reçus. Inutile de renvoyer du contenu volumineux — un `200 OK` vide suffit. Le body tronqué est stocké dans l'historique de livraison côté Yasmine pour debug ops.
 - **Anti-GC sur retries** : nos tentatives 2/3 (à +30 s / +5 min) sont protégées par un `set[asyncio.Task]` module-level, donc elles arrivent même si le process est sous charge.
 
 ---
@@ -401,7 +401,7 @@ Yasmine a bloqué l'envoi du template d'autorisation pour protéger la qualité 
   - `2_per_7d` : 2 dans les 7 j glissants.
   - `4_no_answer_revoked` : 4 `NO_ANSWER` consécutifs → Yasmine anticipe la révocation système.
 
-**Contrainte privacy (M3.6 §1.0 P7)** : ce payload ne leak jamais quel marchand a consommé le quota, ni l'énumération des calls précédents. C'est une info interne Yasmine. Si le reseller demande pourquoi, la réponse est générique : « ce client n'a pas autorisé les appels automatisés sur notre réseau pour le moment ».
+**Contrainte privacy** : ce payload ne leak jamais quel marchand a consommé le quota, ni l'énumération des calls précédents. C'est une info interne Yasmine. Si le reseller demande pourquoi, la réponse est générique : « ce client n'a pas autorisé les appels automatisés sur notre réseau pour le moment ».
 
 #### `call.request.permission_granted_late`
 Cas spécial : l'utilisateur a cliqué **Autoriser** APRÈS que le rail DEMANDE soit déjà terminal (expired / refused / cancelled). L'appel actuel ne reprend pas, mais la permission est désormais acquise.
@@ -553,7 +553,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 - `language` (depuis le Lot 2 chantier pays × langue) : langue effectivement utilisée (`ar` ou `fr`). Pratique quand vous n'aviez pas spécifié `language` à la création — ce champ vous renvoie la langue locale du pays appliquée par défaut. Absent sur les appels antérieurs au Lot 2.
 
 #### `call.cancelled`
-**M3.6 C8** — émis quand le reseller appelle `POST /v1/calls/{id}/cancel`. Distinct de `call.ended` (fin naturelle) et `call.failed` (échec infra). Facturation ajustée sur le payload même.
+Émis quand le reseller appelle `POST /v1/calls/{id}/cancel`. Distinct de `call.ended` (fin naturelle) et `call.failed` (échec infra). Facturation ajustée sur le payload même.
 
 ```json
 {

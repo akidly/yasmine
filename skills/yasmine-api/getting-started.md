@@ -8,7 +8,7 @@ Yasmine est une API qui déclenche des **appels vocaux IA sortants** (confirmati
 
 ### Obtenir une clé API
 
-**Bootstrap de la 1ère clé** : le self-service `POST /v1/me/api-keys` est live (P1-4) mais il exige une clé existante pour s'authentifier. La 1ère clé se demande donc manuellement — contactez `contact@akidly.com` en précisant :
+**Bootstrap de la 1ère clé** : le self-service `POST /v1/me/api-keys` est live mais il exige une clé existante pour s'authentifier. La 1ère clé se demande donc manuellement — contactez `contact@akidly.com` en précisant :
 
 - Nom de votre société / projet
 - Volume estimé d'appels par mois
@@ -148,7 +148,7 @@ Toutes les erreurs `/v1/*` sont renvoyées au format RFC 7807 `application/probl
 }
 ```
 
-→ Contactez l'équipe pour un top-up. Vous pouvez consulter votre solde courant via `GET /v1/me/balance` (P0-2, live).
+→ Contactez l'équipe pour un top-up. Vous pouvez consulter votre solde courant via `GET /v1/me/balance` (live).
 
 ### 422 — Validation
 
@@ -179,7 +179,7 @@ Un `request_id` (8 caractères) est toujours présent — **incluez-le dans tout
 
 ### 429 — Rate limit dépassé
 
-L'API applique des quotas **par clé API** sur tous les endpoints `/v1/*` (M3.6 C7) :
+L'API applique des quotas **par clé API** sur tous les endpoints `/v1/*` :
 
 | Endpoint | Seuil |
 |---|---|
@@ -214,7 +214,7 @@ Les webhooks Meta entrants (`POST /webhooks/whatsapp`) et les probes santé (`GE
 
 ---
 
-## 4.4. Tracer vos requêtes avec `X-Request-ID` (P1-5)
+## 4.4. Tracer vos requêtes avec `X-Request-ID`
 
 Chaque réponse Yasmine inclut un header `X-Request-ID` (UUID v4) unique à la requête. Ce même identifiant apparaît dans le body des erreurs RFC 7807 (champ `request_id`) et dans nos logs serveurs.
 
@@ -239,7 +239,7 @@ Si vous envoyez un ID non-UUID v4 (format invalide, chaîne arbitraire), Yasmine
 
 ---
 
-## 4.8. Gérer vos clés API (P1-4)
+## 4.8. Gérer vos clés API
 
 CRUD self-service : créer une clé pour votre CI, en révoquer une après fuite, suivre l'usage via `last_used_at` et `last_used_ip` :
 
@@ -261,7 +261,7 @@ Rate-limit création : 5/min/reseller. Recette complète dans `docs/examples.md 
 
 ---
 
-## 4.7. Intégrer vos webhooks (P1-2)
+## 4.7. Intégrer vos webhooks
 
 Flow recommandé pour votre intégration webhook :
 
@@ -273,7 +273,7 @@ Détails complets dans `docs/webhooks.md`.
 
 ---
 
-## 4.6. Suivre mon compte (P1-1)
+## 4.6. Suivre mon compte
 
 Trois endpoints self-service pour la supervision :
 
@@ -281,13 +281,13 @@ Trois endpoints self-service pour la supervision :
 - **`GET /v1/me/transactions`** : historique paginé du ledger (mêmes `next_cursor`/`has_more` que `/v1/calls`). Filtres `?since=&until=`.
 - **`GET /v1/me/usage?period=YYYY-MM`** : consommation mensuelle (défaut = mois courant UTC). Breakdown par `call_status` (`completed`/`failed`/`cancelled`).
 
-Rappel : le solde vit sur `/v1/me/balance` (P0-2), séparé pour des raisons anti-BOPLA.
+Rappel : le solde vit sur `/v1/me/balance`, séparé pour des raisons anti-BOPLA.
 
 Recette curl complète dans `docs/examples.md §3.3`.
 
 ---
 
-## 4.5. Réconciliation après webhook perdu (P0-2)
+## 4.5. Réconciliation après webhook perdu
 
 Si un webhook sortant est perdu (crash mid-retry — edge case accepté produit), polling `GET /v1/calls/{id}` quelques secondes plus tard donne **l'état complet** de l'appel — y compris la classification métier (`result` + `result_detail` + `customer_mood` + `flags` + `preferences` + `next_action` + `summary`) et la durée (`call_duration_seconds`, `billable_duration_seconds`) — sans dépendre du webhook. Cet endpoint est scopé tenant : un 404 `call_not_found` est renvoyé avec un body **byte-identique** que le call soit inexistant, propriété d'un autre reseller, ou que le path contienne un UUID syntaxiquement invalide.
 
@@ -340,7 +340,7 @@ curl -H "Authorization: Bearer $YK" \
 
 ---
 
-## 4.9. CORS — connecter un front web (P1-7)
+## 4.9. CORS — connecter un front web
 
 Vous pouvez appeler `api.yasmine.akidly.com` depuis un navigateur (front JavaScript) **uniquement si l'URL de votre site est dans notre liste blanche CORS**. Par défaut, aucune origine n'est autorisée — il faut nous demander l'ajout via le support.
 
@@ -378,7 +378,7 @@ const remaining = res.headers.get("X-RateLimit-Remaining");
 Pas encore. Chaque appel consomme du crédit réel et déclenche un appel téléphonique.
 
 **`Idempotency-Key` est-il obligatoire ?**
-Oui — depuis P0-1 le header est obligatoire sur `POST /v1/calls`, sinon `400 missing_idempotency_key`. Format libre, 1-255 chars (UUID v4 recommandé), TTL 24 h, scope par reseller. Une 2e requête identique (même clé + même body) renvoie la réponse stockée bit-for-bit avec `X-Idempotent-Replay: true`. Une 2e requête avec la même clé mais un body différent retourne `409 idempotency_key_conflict`. Voir `docs/examples.md §4`.
+Oui — le header est obligatoire sur `POST /v1/calls`, sinon `400 missing_idempotency_key`. Format libre, 1-255 chars (UUID v4 recommandé), TTL 24 h, scope par reseller. Une 2e requête identique (même clé + même body) renvoie la réponse stockée bit-for-bit avec `X-Idempotent-Replay: true`. Une 2e requête avec la même clé mais un body différent retourne `409 idempotency_key_conflict`. Voir `docs/examples.md §4`.
 
 **Quels pays sont supportés ?**
 Pour l'instant : `MA` (Maroc), `DZ` (Algérie), `TN` (Tunisie), `FR` (France).

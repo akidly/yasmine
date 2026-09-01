@@ -1,6 +1,6 @@
 # Yasmine API — full documentation
 
-> Concaténation auto-générée des sources de doc reseller. Source de vérité = fichiers individuels (cf liens ci-dessous). Régénéré par `scripts/generate_llms_txt.py` — ne pas éditer à la main, le fichier sera écrasé.
+> Concaténation auto-générée des sources de doc reseller. Source de vérité = fichiers individuels (cf liens ci-dessous). Régénéré automatiquement — ne pas éditer à la main, le fichier sera écrasé.
 
 Sommaire (8 sources concaténées dans cet ordre) :
 
@@ -27,7 +27,7 @@ Yasmine est une API qui déclenche des **appels vocaux IA sortants** (confirmati
 
 ### Obtenir une clé API
 
-**Bootstrap de la 1ère clé** : le self-service `POST /v1/me/api-keys` est live (P1-4) mais il exige une clé existante pour s'authentifier. La 1ère clé se demande donc manuellement — contactez `contact@akidly.com` en précisant :
+**Bootstrap de la 1ère clé** : le self-service `POST /v1/me/api-keys` est live mais il exige une clé existante pour s'authentifier. La 1ère clé se demande donc manuellement — contactez `contact@akidly.com` en précisant :
 
 - Nom de votre société / projet
 - Volume estimé d'appels par mois
@@ -167,7 +167,7 @@ Toutes les erreurs `/v1/*` sont renvoyées au format RFC 7807 `application/probl
 }
 ```
 
-→ Contactez l'équipe pour un top-up. Vous pouvez consulter votre solde courant via `GET /v1/me/balance` (P0-2, live).
+→ Contactez l'équipe pour un top-up. Vous pouvez consulter votre solde courant via `GET /v1/me/balance` (live).
 
 ### 422 — Validation
 
@@ -198,7 +198,7 @@ Un `request_id` (8 caractères) est toujours présent — **incluez-le dans tout
 
 ### 429 — Rate limit dépassé
 
-L'API applique des quotas **par clé API** sur tous les endpoints `/v1/*` (M3.6 C7) :
+L'API applique des quotas **par clé API** sur tous les endpoints `/v1/*` :
 
 | Endpoint | Seuil |
 |---|---|
@@ -233,7 +233,7 @@ Les webhooks Meta entrants (`POST /webhooks/whatsapp`) et les probes santé (`GE
 
 ---
 
-## 4.4. Tracer vos requêtes avec `X-Request-ID` (P1-5)
+## 4.4. Tracer vos requêtes avec `X-Request-ID`
 
 Chaque réponse Yasmine inclut un header `X-Request-ID` (UUID v4) unique à la requête. Ce même identifiant apparaît dans le body des erreurs RFC 7807 (champ `request_id`) et dans nos logs serveurs.
 
@@ -258,7 +258,7 @@ Si vous envoyez un ID non-UUID v4 (format invalide, chaîne arbitraire), Yasmine
 
 ---
 
-## 4.8. Gérer vos clés API (P1-4)
+## 4.8. Gérer vos clés API
 
 CRUD self-service : créer une clé pour votre CI, en révoquer une après fuite, suivre l'usage via `last_used_at` et `last_used_ip` :
 
@@ -280,7 +280,7 @@ Rate-limit création : 5/min/reseller. Recette complète dans `docs/examples.md 
 
 ---
 
-## 4.7. Intégrer vos webhooks (P1-2)
+## 4.7. Intégrer vos webhooks
 
 Flow recommandé pour votre intégration webhook :
 
@@ -292,7 +292,7 @@ Détails complets dans `docs/webhooks.md`.
 
 ---
 
-## 4.6. Suivre mon compte (P1-1)
+## 4.6. Suivre mon compte
 
 Trois endpoints self-service pour la supervision :
 
@@ -300,13 +300,13 @@ Trois endpoints self-service pour la supervision :
 - **`GET /v1/me/transactions`** : historique paginé du ledger (mêmes `next_cursor`/`has_more` que `/v1/calls`). Filtres `?since=&until=`.
 - **`GET /v1/me/usage?period=YYYY-MM`** : consommation mensuelle (défaut = mois courant UTC). Breakdown par `call_status` (`completed`/`failed`/`cancelled`).
 
-Rappel : le solde vit sur `/v1/me/balance` (P0-2), séparé pour des raisons anti-BOPLA.
+Rappel : le solde vit sur `/v1/me/balance`, séparé pour des raisons anti-BOPLA.
 
 Recette curl complète dans `docs/examples.md §3.3`.
 
 ---
 
-## 4.5. Réconciliation après webhook perdu (P0-2)
+## 4.5. Réconciliation après webhook perdu
 
 Si un webhook sortant est perdu (crash mid-retry — edge case accepté produit), polling `GET /v1/calls/{id}` quelques secondes plus tard donne **l'état complet** de l'appel — y compris la classification métier (`result` + `result_detail` + `customer_mood` + `flags` + `preferences` + `next_action` + `summary`) et la durée (`call_duration_seconds`, `billable_duration_seconds`) — sans dépendre du webhook. Cet endpoint est scopé tenant : un 404 `call_not_found` est renvoyé avec un body **byte-identique** que le call soit inexistant, propriété d'un autre reseller, ou que le path contienne un UUID syntaxiquement invalide.
 
@@ -359,7 +359,7 @@ curl -H "Authorization: Bearer $YK" \
 
 ---
 
-## 4.9. CORS — connecter un front web (P1-7)
+## 4.9. CORS — connecter un front web
 
 Vous pouvez appeler `api.yasmine.akidly.com` depuis un navigateur (front JavaScript) **uniquement si l'URL de votre site est dans notre liste blanche CORS**. Par défaut, aucune origine n'est autorisée — il faut nous demander l'ajout via le support.
 
@@ -397,7 +397,7 @@ const remaining = res.headers.get("X-RateLimit-Remaining");
 Pas encore. Chaque appel consomme du crédit réel et déclenche un appel téléphonique.
 
 **`Idempotency-Key` est-il obligatoire ?**
-Oui — depuis P0-1 le header est obligatoire sur `POST /v1/calls`, sinon `400 missing_idempotency_key`. Format libre, 1-255 chars (UUID v4 recommandé), TTL 24 h, scope par reseller. Une 2e requête identique (même clé + même body) renvoie la réponse stockée bit-for-bit avec `X-Idempotent-Replay: true`. Une 2e requête avec la même clé mais un body différent retourne `409 idempotency_key_conflict`. Voir `docs/examples.md §4`.
+Oui — le header est obligatoire sur `POST /v1/calls`, sinon `400 missing_idempotency_key`. Format libre, 1-255 chars (UUID v4 recommandé), TTL 24 h, scope par reseller. Une 2e requête identique (même clé + même body) renvoie la réponse stockée bit-for-bit avec `X-Idempotent-Replay: true`. Une 2e requête avec la même clé mais un body différent retourne `409 idempotency_key_conflict`. Voir `docs/examples.md §4`.
 
 **Quels pays sont supportés ?**
 Pour l'instant : `MA` (Maroc), `DZ` (Algérie), `TN` (Tunisie), `FR` (France).
@@ -640,11 +640,11 @@ curl -X POST "$BASE/v1/calls" \
   }'
 ```
 
-Cette `metadata` sera persistée côté serveur dans `calls.metadata.reseller_metadata` et vous sera renvoyée telle quelle dans la réponse et (à terme) dans les webhooks sortants.
+Cette `metadata` sera conservée côté serveur et vous sera renvoyée telle quelle dans la réponse et (à terme) dans les webhooks sortants.
 
 ---
 
-## 3.2. Gérer mes clés API (P1-4)
+## 3.2. Gérer mes clés API
 
 Trois endpoints self-service pour créer, lister et révoquer vos clés API.
 
@@ -684,7 +684,7 @@ curl -X DELETE -H "Authorization: Bearer $YK" \
 
 ---
 
-## 3.2.1. Journal d'audit d'une clé API (P1-6)
+## 3.2.1. Journal d'audit d'une clé API
 
 Le serveur enregistre automatiquement trois types d'événements par clé : `created`, `revoked`, `rate_limited`. Utile pour détecter qu'une clé a été spamée (429 multiples) ou pour auditer qui a créé/révoqué quoi et quand.
 
@@ -721,7 +721,7 @@ curl -H "Authorization: Bearer $YK" \
 
 ---
 
-## 3.3. Suivre mon compte (P1-1)
+## 3.3. Suivre mon compte
 
 Trois endpoints de lecture self-service.
 
@@ -732,7 +732,7 @@ Trois endpoints de lecture self-service.
 #    Schéma complet : voir `MeOut` dans `docs/openapi.yaml`.
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me"
 
-# 2. Solde (livré P0-2, non-régressé par P1-1).
+# 2. Solde.
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me/balance"
 # {"balance_seconds":3600,"currency":null,"updated_at":"..."}
 
@@ -764,7 +764,7 @@ Pas de 404 sur période sans appel — la réponse est 200 avec tous les compteu
 
 ---
 
-## 3.4. Lister les appels avec pagination (P1-3)
+## 3.4. Lister les appels avec pagination
 
 `GET /v1/calls` renvoie une **enveloppe paginée** `{data, next_cursor, has_more}`. Tri `created_at DESC` avec tie-break stable `id DESC`.
 
@@ -793,7 +793,7 @@ curl -H "Authorization: Bearer $YK" \
 
 ---
 
-## 3.5. Récupérer un appel + consulter son solde (P0-2)
+## 3.5. Récupérer un appel + consulter son solde
 
 ```bash
 # Lecture d'un appel — scoped tenant, 404 anti-énum si autre reseller / inconnu / UUID invalide
@@ -919,7 +919,7 @@ Réponse (HTTP **422**) :
 }
 ```
 
-### Champs inconnus → 422 `extra_forbidden` (P1-12)
+### Champs inconnus → 422 `extra_forbidden`
 
 Tout champ qui ne fait pas partie du schéma `CallCreate` ou `CustomerInput` est rejeté. Un typo à la racine (par exemple `custommer` au lieu de `customer`) ou à l'intérieur de `customer` (par exemple `phonne_number`) ne passe pas silencieusement — le serveur renvoie **422** avec le chemin exact du champ fautif :
 
@@ -1020,7 +1020,7 @@ Le self-service `GET /v1/me/balance` arrive en M4 — vous pourrez surveiller vo
 
 ## 7. Annuler un appel en cours
 
-**M3.6 C8** — `POST /v1/calls/{id}/cancel` coupe immédiatement un appel en cours, que le rail APPEL soit en `dialing`, `ringing` ou `connected`.
+`POST /v1/calls/{id}/cancel` coupe immédiatement un appel en cours, que le rail APPEL soit en `dialing`, `ringing` ou `connected`.
 
 ```bash
 CALL_ID="dcaebcdd-a81a-4386-a0df-85d9aaafe862"
@@ -1069,7 +1069,7 @@ Guide pour configurer et recevoir les notifications sortantes Yasmine.
 
 > Ce document décrit les webhooks **sortants** émis par Yasmine vers l'endpoint reseller. Les webhooks entrants (opérateurs de messagerie vers Yasmine) sont une implémentation interne et ne sont pas documentés ici.
 
-> **Statut M3.6 C6** :
+> **Statut** :
 > - **Phase 1 livrée (2026-04-20)** : `POST/GET/DELETE /v1/me/webhooks` self-service. Un reseller peut enregistrer son endpoint et récupérer son secret HMAC.
 > - **Phase 2 livrée (2026-04-20)** : émission réelle des events (initialement 11 events `call.*`) via dispatcher async + retry 3× (0s / 30s / 5min), timeout 10 s, SSRF re-check à chaque POST.
 > - **Phase 3 livrée (2026-04-26)** : enrichissement à **18 events `call.*`** — ajout du rail TEMPLATE (cycle de vie du message WhatsApp), distinction `permission_revoked` (manuelle) / `permission_auto_revoked` (système) / `permission_refused` (clic Refuser), nouveau `service_unavailable` qui isole les problèmes système Yasmine du `call.failed` générique.
@@ -1124,7 +1124,7 @@ curl -X DELETE https://api.yasmine.akidly.com/v1/me/webhooks \
 
 Réponse `204 No Content`. Soft-delete : la config passe en `active=false`, l'historique `webhook_deliveries` reste intact.
 
-### 1.4 Rotation du secret (P1-8)
+### 1.4 Rotation du secret
 
 Utiliser l'endpoint dédié — **pas besoin** de delete/recreate :
 
@@ -1236,7 +1236,7 @@ Après **3 échecs consécutifs**, l'event est abandonné. Le champ `error` de l
 
 Un event est considéré **livré** dès qu'un `2xx` est reçu. Tout `3xx`, `4xx`, `5xx`, timeout, ou erreur DNS/TLS = échec → retry.
 
-### Tester votre endpoint (P1-2)
+### Tester votre endpoint
 
 Avant d'attendre un vrai event en prod, vous pouvez forcer Yasmine à POSTer un `webhook.test` synchrone vers votre URL :
 
@@ -1274,7 +1274,7 @@ Filtrez côté votre code sur `data.test === true` pour ignorer ces événements
 
 **Timeout 5 s, pas de retry**, **rate-limit 10/min** (cumulé avec 600/min global). Toutes les tentatives sont tracées dans `webhook_deliveries` avec `event_type='webhook.test'` (visibles via `GET /v1/me/webhooks/deliveries`).
 
-### Auditer vos livraisons (P1-2)
+### Auditer vos livraisons
 
 ```bash
 # Liste paginée des dernières livraisons (tous events, défaut 50, max 200).
@@ -1296,12 +1296,12 @@ curl -H "Authorization: Bearer $YK" \
 
 11 champs exposés par ligne : `delivery_id`, `event_type`, `target_url`, `http_status`, `latency_ms`, `attempt_count`, `status` (`delivered`/`failed`/`pending`), `next_retry_at`, `created_at`, `last_attempted_at`, `error_message` (tronqué 200 chars). Anti-BOPLA strict : ni `response_body`, ni `signature_sent`, ni headers internes.
 
-### Garde-fous techniques côté Yasmine (P0-5)
+### Garde-fous techniques côté Yasmine
 
 Transparent pour le reseller — documenté pour information.
 
 - **Pas de suivi de redirection**. Un `3xx` est traité comme un échec → retry. Si votre endpoint répond en 3xx vers une autre URL, configurez l'URL finale directement via `POST /v1/me/webhooks` au lieu d'attendre que Yasmine la suive.
-- **Body response borné à 1024 bytes**. Yasmine lit votre réponse en streaming et coupe le flux dès 1024 B reçus. Inutile de renvoyer du contenu volumineux — un `200 OK` vide suffit. Le body tronqué est stocké dans `webhook_deliveries.response_body` côté Yasmine pour debug ops.
+- **Body response borné à 1024 bytes**. Yasmine lit votre réponse en streaming et coupe le flux dès 1024 B reçus. Inutile de renvoyer du contenu volumineux — un `200 OK` vide suffit. Le body tronqué est stocké dans l'historique de livraison côté Yasmine pour debug ops.
 - **Anti-GC sur retries** : nos tentatives 2/3 (à +30 s / +5 min) sont protégées par un `set[asyncio.Task]` module-level, donc elles arrivent même si le process est sous charge.
 
 ---
@@ -1466,7 +1466,7 @@ Yasmine a bloqué l'envoi du template d'autorisation pour protéger la qualité 
   - `2_per_7d` : 2 dans les 7 j glissants.
   - `4_no_answer_revoked` : 4 `NO_ANSWER` consécutifs → Yasmine anticipe la révocation système.
 
-**Contrainte privacy (M3.6 §1.0 P7)** : ce payload ne leak jamais quel marchand a consommé le quota, ni l'énumération des calls précédents. C'est une info interne Yasmine. Si le reseller demande pourquoi, la réponse est générique : « ce client n'a pas autorisé les appels automatisés sur notre réseau pour le moment ».
+**Contrainte privacy** : ce payload ne leak jamais quel marchand a consommé le quota, ni l'énumération des calls précédents. C'est une info interne Yasmine. Si le reseller demande pourquoi, la réponse est générique : « ce client n'a pas autorisé les appels automatisés sur notre réseau pour le moment ».
 
 #### `call.request.permission_granted_late`
 Cas spécial : l'utilisateur a cliqué **Autoriser** APRÈS que le rail DEMANDE soit déjà terminal (expired / refused / cancelled). L'appel actuel ne reprend pas, mais la permission est désormais acquise.
@@ -1618,7 +1618,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 - `language` (depuis le Lot 2 chantier pays × langue) : langue effectivement utilisée (`ar` ou `fr`). Pratique quand vous n'aviez pas spécifié `language` à la création — ce champ vous renvoie la langue locale du pays appliquée par défaut. Absent sur les appels antérieurs au Lot 2.
 
 #### `call.cancelled`
-**M3.6 C8** — émis quand le reseller appelle `POST /v1/calls/{id}/cancel`. Distinct de `call.ended` (fin naturelle) et `call.failed` (échec infra). Facturation ajustée sur le payload même.
+Émis quand le reseller appelle `POST /v1/calls/{id}/cancel`. Distinct de `call.ended` (fin naturelle) et `call.failed` (échec infra). Facturation ajustée sur le payload même.
 
 ```json
 {
@@ -1800,24 +1800,24 @@ Certains `type` ajoutent des champs dédiés :
 | `forbidden` | 403 | Clé valide mais sans droit sur la ressource. |
 | `not_found` | 404 | Ressource absente ou non accessible au reseller courant. |
 | `conflict` | 409 | Conflit générique (cf slugs spécifiques `idempotency_key_conflict`, `webhook_already_configured`). |
-| `missing_idempotency_key` | 400 | Header `Idempotency-Key` absent sur `POST /v1/calls`. **Obligatoire** depuis P0-1. Générer une clé unique par requête (UUID v4 recommandé). |
+| `missing_idempotency_key` | 400 | Header `Idempotency-Key` absent sur `POST /v1/calls`. **Obligatoire**. Générer une clé unique par requête (UUID v4 recommandé). |
 | `idempotency_key_empty` | 400 | Header `Idempotency-Key` présent mais vide. Doit faire au moins 1 char. |
 | `idempotency_key_too_long` | 400 | Header `Idempotency-Key` > 255 chars. Limite stricte côté serveur. |
 | `idempotency_key_conflict` | 409 | Même `Idempotency-Key` réutilisée avec un body différent dans la fenêtre de 24 h. Générer une nouvelle clé pour une requête différente. Le body original n'est jamais ré-exposé. |
 | `order_external_id_already_exists` | 409 | `POST /v1/calls` avec `order.external_id` déjà utilisé pour ce merchant. Les commandes sont créées par INSERT strict (pas d'upsert) — pour atteindre à nouveau le client sur la même commande, relancer avec une nouvelle `Idempotency-Key` et incrémenter `order.previous_attempts`. Pour créer une commande distincte, utiliser une `external_id` différente. |
-| `api_key_not_found` | 404 | `DELETE /v1/me/api-keys/{key_id}` sur une clé inexistante OU appartenant à un autre reseller (P1-4). Body byte-identique sur les 2 cas — pattern anti-énum P0-2. |
-| `invalid_key_id` | 400 | `DELETE /v1/me/api-keys/{key_id}` avec UUID malformé (P1-4). Se distingue du 404 pour aider le client à diagnostiquer un bug local. |
-| `webhook_url_not_configured` | 400 | `POST /v1/me/webhooks/test` sans webhook actif (P1-2). Configurer d'abord via `POST /v1/me/webhooks`. |
-| `invalid_status_filter` | 400 | `GET /v1/me/webhooks/deliveries?status=...` avec valeur hors `delivered`/`failed`/`pending` (P1-2). Le `detail` liste les valeurs acceptées. |
-| `invalid_period_format` | 400 | `GET /v1/me/usage?period=...` avec format non-`YYYY-MM` ou mois hors 01-12 (P1-1). Exemple : `?period=abc`, `?period=2026-13`, `?period=2026-00`. Remédiation : utiliser le format strict ou omettre (défaut = mois courant UTC). |
-| `invalid_cursor` | 400 | `GET /v1/calls?cursor=...` ou `GET /v1/me/transactions?cursor=...` avec curseur malformé, signature tampered, ou `CURSOR_SIGNING_KEY` tournée côté serveur (P1-3). Le client refait la 1re requête sans `cursor`. |
-| `cursor_expired` | 400 | Curseur > 24 h (TTL fixe, P1-3). Même remédiation : refaire la 1re requête sans `cursor`. |
+| `api_key_not_found` | 404 | `DELETE /v1/me/api-keys/{key_id}` sur une clé inexistante OU appartenant à un autre reseller. Body byte-identique sur les 2 cas — anti-énumération. |
+| `invalid_key_id` | 400 | `DELETE /v1/me/api-keys/{key_id}` avec UUID malformé. Se distingue du 404 pour aider le client à diagnostiquer un bug local. |
+| `webhook_url_not_configured` | 400 | `POST /v1/me/webhooks/test` sans webhook actif. Configurer d'abord via `POST /v1/me/webhooks`. |
+| `invalid_status_filter` | 400 | `GET /v1/me/webhooks/deliveries?status=...` avec valeur hors `delivered`/`failed`/`pending`. Le `detail` liste les valeurs acceptées. |
+| `invalid_period_format` | 400 | `GET /v1/me/usage?period=...` avec format non-`YYYY-MM` ou mois hors 01-12. Exemple : `?period=abc`, `?period=2026-13`, `?period=2026-00`. Remédiation : utiliser le format strict ou omettre (défaut = mois courant UTC). |
+| `invalid_cursor` | 400 | `GET /v1/calls?cursor=...` ou `GET /v1/me/transactions?cursor=...` avec curseur malformé, signature invalide, ou clé de signature tournée côté serveur. Le client refait la 1re requête sans `cursor`. |
+| `cursor_expired` | 400 | Curseur > 24 h (TTL fixe). Même remédiation : refaire la 1re requête sans `cursor`. |
 | `payload_too_large` | 413 | Émis sur `POST /webhooks/whatsapp` quand le corps dépasse 256 KiB. En pratique Meta envoie ~50 Ko. Si vous voyez ce code lors d'une rafale de retries Meta, contactez le support — il s'agit probablement d'un payload falsifié ou d'une anomalie côté Meta. **Pas applicable aux endpoints `/v1/*`**, qui ont leur propre validation. |
 | `validation_error` | 422 | Payload mal formé. Voir `errors`. |
 | `language_not_supported_for_country` | 422 | `POST /v1/calls` avec une combinaison `(country, language)` non disponible. Aujourd'hui : `country=FR` + `language=ar`. Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. Omettre `language` pour appliquer la langue par défaut du pays. |
-| `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé (M3.6 C7). Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
+| `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé. Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
 | `rate_limited` | 429 | Slug par défaut pour les 429 qui ne passent pas par le rate-limiter principal `/v1/*` (cas marginal — un 429 émis directement via `HTTPException(429)` sans override). En pratique vous verrez surtout `rate_limit_exceeded`. Même remédiation : respecter `Retry-After`. |
-| `call_not_found` | 404 | POST `/v1/calls/{id}/cancel` sur un `call_id` inexistant ou appartenant à un autre reseller (M3.6 C8). Pas de leak d'existence. Émis aussi par GET `/v1/calls/{id}/recording` quand l'audio n'a pas été produit (call jamais finalisé) ou pour les mêmes raisons de scoping. |
+| `call_not_found` | 404 | POST `/v1/calls/{id}/cancel` sur un `call_id` inexistant ou appartenant à un autre reseller . Pas de fuite d'existence. Émis aussi par GET `/v1/calls/{id}/recording` quand l'audio n'a pas été produit (call jamais finalisé) ou pour les mêmes raisons de scoping. |
 | `recording_gone` | 410 | GET `/v1/calls/{id}/recording` sur un appel dont l'enregistrement audio a été purgé après la fenêtre de rétention (30 jours). Distinct de `call_not_found` pour permettre au reseller de différencier « jamais existé » vs « a existé mais purgé ». |
 | `webhook_url_rejected` | 400 | POST `/v1/me/webhooks` avec URL rejetée par le SSRF guard. Champ `reason` parmi `invalid_url`/`scheme_not_allowed`/`localhost_rejected`/`dns_resolution_failed`/`private_ip_rejected`. |
 | `webhook_already_configured` | 409 | POST `/v1/me/webhooks` sur reseller déjà configuré. DELETE d'abord pour rotate. |
@@ -1828,8 +1828,7 @@ Certains `type` ajoutent des champs dédiés :
 
 ## Compatibilité
 
-Les URLs `https://docs.yasmine.akidly.com/errors/{slug}` sont **résolvables
-depuis P1-10** : elles redirigent (302) vers la bonne section de la page
+Les URLs `https://docs.yasmine.akidly.com/errors/{slug}` sont **résolvables** : elles redirigent (302) vers la bonne section de la page
 [errors.html](https://docs.yasmine.akidly.com/errors). Le slug reste
 l'identifiant stable à utiliser côté SDK pour router une classe d'erreur
 — l'URL humaine est un bonus.
@@ -1852,8 +1851,7 @@ webhooks déjà en prod.
 
 Sections détaillées pour les 5 slugs les plus rencontrés côté reseller.
 Le tool MCP `explain_error` parse ce bloc en priorité, et tombe sur la
-ligne brute du tableau ci-dessus pour les autres slugs. Format stable,
-parsé par regex (voir `yasmine_mcp/introspection.py`).
+ligne brute du tableau ci-dessus pour les autres slugs. Format stable, parsé automatiquement.
 
 ### validation_error
 **Status** : 422
@@ -1919,7 +1917,7 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
 
 **Remediation** :
 - **Ne pas retry aveuglément** : le solde reste vide, le 402 sera identique. Aucun appel n'est créé, donc pas de double-facturation à craindre — mais bouclage inutile.
-- Consulter le solde courant : `GET /v1/me/balance` (P0-2, live).
+- Consulter le solde courant : `GET /v1/me/balance` (live).
 - Top-up via le support Yasmine.
 - La réponse contient les champs étendus `balance_seconds` et `required_seconds` pour logger le delta exact.
 
@@ -1991,7 +1989,7 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
 **Causes** :
 - Curseur opaque malformé (caractères tronqués, copy-paste partiel).
 - Signature HMAC tampered (curseur modifié manuellement côté client).
-- `CURSOR_SIGNING_KEY` rotée côté serveur (tous les curseurs antérieurs invalidés).
+- clé de signature des curseurs rotée côté serveur (tous les curseurs antérieurs invalidés).
 - Confusion entre `invalid_cursor` (format) et `cursor_expired` (TTL > 24 h dépassé) — slug différent, même remédiation.
 
 **Remediation** :
@@ -2087,11 +2085,11 @@ Si un nouvel endpoint est annoncé en preview avant implémentation, il sera mar
 
 ## 6. Statut de `/v1` en production
 
-`/v1` est **live** et **commercialisable** depuis M3.3 (2026-04-19) — `POST /v1/calls` est le premier endpoint reseller mis en prod. Les livraisons ultérieures ont étendu la surface **live** :
+`/v1` est **live** et **commercialisable** depuis le 2026-04-19 — `POST /v1/calls` est le premier endpoint reseller mis en prod. Les livraisons ultérieures ont étendu la surface **live** :
 
-- `GET /v1/calls/{call_id}` depuis P0-2 (réconciliation scopée reseller, anti-énumération).
-- `/v1/me/*` (identité, balance, transactions, usage, webhooks, api-keys) depuis P1-1 à P1-4 — 7 routes self-service.
-- Webhooks sortants signés HMAC-SHA256 depuis M3.6 C6 Phase 2 (`call.*` events).
+- `GET /v1/calls/{call_id}` (réconciliation scopée reseller, anti-énumération).
+- `/v1/me/*` (identité, balance, transactions, usage, webhooks, api-keys) — 7 routes self-service.
+- Webhooks sortants signés HMAC-SHA256 (`call.*` events).
 
 L'intégralité des endpoints documentés dans `docs/openapi.yaml` est désormais `x-status: live` (à l'exception de `/healthz` annoté `x-status: internal`, hors SLA `/v1/*`).
 
@@ -2346,7 +2344,7 @@ info:
     **Authentification** : Bearer token `yk_...` sur tous les endpoints
     `/v1/*`. Cf `docs/getting-started.md`.
 
-    **Traçabilité** (P1-5) : chaque requête reçoit un header response
+    **Traçabilité** : chaque requête reçoit un header response
     `X-Request-ID` (UUID v4). Vous pouvez envoyer votre propre UUID v4
     via le header request de même nom — Yasmine le respecte si format
     strict valide, sinon régénère. Le `request_id` apparaît aussi dans
@@ -2359,17 +2357,17 @@ info:
     - `X-Request-ID` (UUID v4) — cf bloc Traçabilité ci-dessus. Schéma :
       `#/components/headers/RequestIdResponse`.
     - `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset`
-      (M3.6 C7) — émis sur les 2xx des endpoints rate-limités et aussi
+      — émis sur les 2xx des endpoints rate-limités et aussi
       sur les 429. Schémas : `#/components/headers/RateLimitLimit`,
       `RateLimitRemaining`, `RateLimitReset`.
     - `Retry-After` (RFC 7231) — émis uniquement sur 429, voir
       `#/components/responses/RateLimited`.
     - `X-Idempotent-Replay` — uniquement sur `POST /v1/calls` quand la
-      réponse est un replay (P0-1), voir la route.
+      réponse est un replay, voir la route.
 
     Chaque endpoint `/v1/*` déclare son propre plafond rate-limit via
     l'extension `x-rate-limit: "N/minute"` (valeur source code, cf
-    `api/rate_limit.py` + décorateurs `@limiter.limit(...)`).
+    compteur par clé API).
 
     Voir aussi : `/docs/getting-started.md`, `/docs/examples.md`,
     `/docs/webhooks.md`, `/docs/errors.md`, `/docs/versioning.md`.
@@ -2402,7 +2400,7 @@ tags:
       Émission des events (catalogue `call.*`) cf `docs/webhooks.md`.
   - name: API Keys
     description: |
-      Gestion self-service des clés API du reseller (P1-4). CRUD simple :
+      Gestion self-service des clés API du reseller. CRUD simple :
       liste, création (secret visible **une seule fois**), révocation
       soft. Pas de scopes, pas d'expiration automatique — la seule
       bascule sécurité est la révocation manuelle.
@@ -2429,7 +2427,7 @@ paths:
         est choisi côté Yasmine via la configuration serveur — transparent
         pour le reseller.
 
-        **Idempotency-Key obligatoire** (P0-1) : header `Idempotency-Key`
+        **Idempotency-Key obligatoire** : header `Idempotency-Key`
         requis (1-255 chars, UUID v4 recommandé). Scope par reseller, TTL
         24 h. Un retry réseau (504 Cloudflare, time-out client) avec la
         même clé renvoie la réponse stockée bit-for-bit (`X-Idempotent-
@@ -2590,7 +2588,7 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Liste paginée des appels du reseller authentifié (P1-3).
+        Liste paginée des appels du reseller authentifié.
         Tri `created_at DESC` avec tie-break stable `id DESC`.
 
         **Curseur opaque** : passer la valeur `next_cursor` de la page
@@ -2641,7 +2639,7 @@ paths:
             - `failed` — tout état terminal non-nominal : permission
               refusée, expirée, quota bloqué, annulé reseller, ou tout
               autre échec non mappé. Un cancel reseller termine ici et
-              non dans un `cancelled` distinct côté `calls.status`.
+              non dans un `cancelled` distinct côté statut agrégé.
         - in: query
           name: result
           required: false
@@ -2685,7 +2683,7 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "503":
           description: |
-            `CURSOR_SIGNING_KEY` absente côté serveur (fail-closed P1-3).
+            clé de signature absente côté serveur (fail-closed).
             Contacter le support.
           content:
             application/problem+json:
@@ -2700,7 +2698,7 @@ paths:
       x-rate-limit: "600/minute"
       description: |
         Lit l'état courant d'un appel scopé au reseller authentifié
-        (P0-2). Utile pour réconcilier après un webhook perdu ou un
+        Utile pour réconcilier après un webhook perdu ou un
         crash mid-retry.
 
         **Anti-énumération** : trois cas renvoient un 404
@@ -2833,7 +2831,7 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Retourne les 5 champs d'identité du reseller authentifié (P1-1).
+        Retourne les 5 champs d'identité du reseller authentifié.
         Anti-BOPLA : pas de `balance_seconds` (voir `/v1/me/balance`),
         pas de `status` interne, pas de compteurs.
       responses:
@@ -2853,9 +2851,9 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Historique paginé du ledger `credit_transactions` (P1-1).
+        Historique paginé du ledger `credit_transactions`.
         Tri `created_at DESC, id DESC` (tie-break stable). Curseur
-        opaque HMAC-SHA256 (TTL 24 h) réutilisé de P1-3 — même
+        opaque HMAC-SHA256 (TTL 24 h) — même
         contrat d'erreur `invalid_cursor` / `cursor_expired`.
 
         `seconds` est **signé** : positif = crédit (topup/refund),
@@ -2895,7 +2893,7 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "503":
           description: |
-            `CURSOR_SIGNING_KEY` absente côté serveur.
+            clé de signature absente côté serveur.
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -2908,12 +2906,12 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Agrégats sur la période `YYYY-MM` (P1-1). Défaut = mois
+        Agrégats sur la période `YYYY-MM`. Défaut = mois
         courant UTC si `?period` absent. Fenêtre semi-open
-        `[period_start, period_end)` sur `calls.created_at` (date de
+        `[period_start, period_end)` sur la date de création de l'appel (date de
         soumission, pas de fin).
 
-        **Ventilation** basée sur `calls.call_status` :
+        **Ventilation** basée sur `call_status` :
         - `ended` → `breakdown.completed_*`
         - `failed` → `breakdown.failed_calls`
         - `cancelled` → `breakdown.cancelled_calls`
@@ -2953,7 +2951,7 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Retourne les clés API du reseller courant (P1-4). Inclut les
+        Retourne les clés API du reseller courant. Inclut les
         clés actives ET révoquées (historique complet). Tri
         `created_at DESC`. Jamais de pagination — en pratique un
         reseller a < 10 clés.
@@ -2975,7 +2973,7 @@ paths:
       x-status: live
       x-rate-limit: "5/minute"
       description: |
-        Génère une nouvelle clé API (P1-4). Pattern Stripe/GitHub :
+        Génère une nouvelle clé API. Pattern Stripe/GitHub :
         la `secret_key` est **visible UNE SEULE FOIS** dans la réponse
         201. Le serveur n'en persiste que le hash SHA-256.
 
@@ -3014,11 +3012,11 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Soft-delete : pose `revoked_at = NOW()` sur la clé (P1-4). La
+        Soft-delete : pose `revoked_at = NOW()` sur la clé. La
         clé apparaîtra toujours dans `GET /v1/me/api-keys` avec
         `status=revoked` (historique préservé).
 
-        **Anti-énumération** (pattern P0-2) : 404 `api_key_not_found`
+        **Anti-énumération** : 404 `api_key_not_found`
         byte-identique sur 3 cas : UUID malformé, clé inexistante, clé
         appartenant à un autre reseller.
 
@@ -3060,7 +3058,7 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Renvoie les événements associés à une clé API (P1-6). Trois
+        Renvoie les événements associés à une clé API. Trois
         types d'events sont émis par le serveur aujourd'hui :
 
         - `created` — à la création via `POST /v1/me/api-keys`.
@@ -3073,7 +3071,7 @@ paths:
         **Pagination** (curseur opaque HMAC-SHA256, TTL 24 h, forward-only).
         Tri `created_at DESC, id DESC`. `limit` max 50.
 
-        **Anti-énumération** (pattern P0-2) : 404 `api_key_not_found`
+        **Anti-énumération** : 404 `api_key_not_found`
         byte-identique si la clé n'existe pas OU appartient à un autre
         reseller.
 
@@ -3117,7 +3115,7 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "503":
-          description: "`CURSOR_SIGNING_KEY` non configurée côté serveur."
+          description: "Clé de signature des curseurs non configurée côté serveur."
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -3131,10 +3129,10 @@ paths:
       x-rate-limit: "600/minute"
       description: |
         Solde du reseller authentifié, exprimé en **secondes facturables**
-        (P0-2). Un appel coûte son `billed_seconds` (`max(duration_s, 10)`).
+        Un appel coûte son `billed_seconds` (`max(duration_s, 10)`).
 
-        Le solde peut être négatif jusqu'à `-MAX_OVERDRAFT_SECONDS`
-        (default -300 s) sur burst concurrent — protection anti-clé volée.
+        Le solde peut être négatif dans la limite d'un découvert
+        autorisé (300 s par défaut) — protection anti-clé volée.
 
         `currency` est `null` aujourd'hui (balance en secondes pures),
         réservé pour une future facturation en monnaie. `updated_at` est
@@ -3157,9 +3155,9 @@ paths:
       x-rate-limit: "10/minute"
       description: |
         Déclenche un `webhook.test` synchrone vers l'URL configurée du
-        reseller (P1-2). Retourne immédiatement le résultat (HTTP status,
+        reseller. Retourne immédiatement le résultat (HTTP status,
         latence, erreur éventuelle). **Timeout 5 s, pas de retry**
-        (contrairement aux events réels du dispatcher P0-5).
+        (contrairement aux events réels du dispatcher).
 
         Signature HMAC-SHA256 identique aux webhooks réels :
         `X-Yasmine-Signature: sha256=<hex>`. Le payload contient
@@ -3194,8 +3192,8 @@ paths:
       x-status: live
       x-rate-limit: "600/minute"
       description: |
-        Audit des livraisons webhook sortantes du reseller (P1-2).
-        Tri `attempted_at DESC, id DESC`. Curseur opaque P1-3.
+        Audit des livraisons webhook sortantes du reseller.
+        Tri `attempted_at DESC, id DESC`. Curseur opaque.
 
         **Anti-BOPLA strict** : ni `response_body`, ni `signature_sent`,
         ni `event_id` brut. `error_message` tronqué à 200 chars.
@@ -3250,7 +3248,7 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "503":
           description: |
-            `CURSOR_SIGNING_KEY` absente côté serveur.
+            clé de signature absente côté serveur.
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -3382,7 +3380,7 @@ paths:
       x-status: live
       x-rate-limit: "5/minute"
       description: |
-        **P1-8** — Rotate atomiquement le `signing_secret` HMAC-SHA256
+        Rotate atomiquement le `signing_secret` HMAC-SHA256
         du webhook actif. Pattern Stripe : nouveau secret au format
         `whsec_<43 chars base64url>`, visible **une seule fois** dans la
         réponse. L'ancien secret ne signe plus aucun event dès le retour
@@ -3463,7 +3461,7 @@ components:
         type: string
         format: uuid
       description: |
-        UUID v4 que vous souhaitez attribuer à cette requête (P1-5).
+        UUID v4 que vous souhaitez attribuer à cette requête.
 
         - Si présent et format UUID v4 strict valide (RFC 4122) : Yasmine
           le respecte et le retourne tel quel en header response.
@@ -3482,7 +3480,7 @@ components:
         minLength: 1
         maxLength: 255
       description: |
-        Clé d'idempotence **obligatoire** (P0-1). Format libre, 1-255
+        Clé d'idempotence **obligatoire**. Format libre, 1-255
         chars (UUID v4 recommandé). Scope par reseller, TTL 24 h.
 
         - **Replay** (même clé + même body) → la réponse stockée est
@@ -3512,14 +3510,14 @@ components:
       in: path
       name: call_id
       required: true
-      # P0-2 : on accepte n'importe quelle string en path. Un UUID
+      # On accepte n'importe quelle string en path. Un UUID
       # syntaxiquement invalide est traite cote serveur comme 404
       # `call_not_found` (pas 422), pour homogeneiser l'anti-enum.
       schema: { type: string }
   headers:
     RequestIdResponse:
       description: |
-        UUID v4 qui identifie cette requête côté serveur (P1-5). Émis
+        UUID v4 qui identifie cette requête côté serveur. Émis
         sur **toutes** les responses, succès comme erreur. Respecte la
         valeur fournie par le client via le header `X-Request-ID` si
         format UUID v4 strict valide, sinon régénère. À joindre à tout
@@ -3531,20 +3529,20 @@ components:
     RateLimitLimit:
       description: |
         Plafond rate-limit appliqué à cet endpoint pour la clé API
-        courante, exprimé en requêtes par minute (M3.6 C7). Identique
+        courante, exprimé en requêtes par minute. Identique
         quelle que soit l'issue de la requête (2xx, 4xx, 5xx).
       schema: { type: integer }
       example: 600
     RateLimitRemaining:
       description: |
-        Nombre de requêtes restant dans la fenêtre courante (M3.6 C7).
+        Nombre de requêtes restant dans la fenêtre courante.
         Vaut `0` sur une 429.
       schema: { type: integer }
       example: 597
     RateLimitReset:
       description: |
         Timestamp Unix (secondes depuis l'epoch) du prochain reset de
-        la fenêtre rate-limit (M3.6 C7).
+        la fenêtre rate-limit.
       schema: { type: integer }
       example: 1714744860
   responses:
@@ -3653,7 +3651,7 @@ components:
                   required_seconds: { type: integer }
     RateLimited:
       description: |
-        Rate-limit par clé API dépassé (M3.6 C7). Slug
+        Rate-limit par clé API dépassé. Slug
         `rate_limit_exceeded`. Respecter `Retry-After` (secondes) avant
         de retenter.
       headers:
@@ -3728,7 +3726,7 @@ components:
         has_more: { type: boolean }
         next_cursor: { type: string, nullable: true }
     # -----------------------------------------------------------------------
-    # CallCreate / CallOut (M3.3 live) — source de vérité = api/v1/schemas.py
+    # CallCreate / CallOut
     # -----------------------------------------------------------------------
     CustomerInput:
       type: object
@@ -3763,7 +3761,7 @@ components:
           nullable: true
           description: |
             Genre du client. Utilisé pour adapter les formules de
-            politesse du dialogue. Persisté dans `customers.gender`
+            politesse du dialogue. Mémorisé sur la fiche client
             (COALESCE stickiness — une valeur posée n'est pas écrasée
             par un POST ultérieur sans ce champ).
         email:
@@ -3773,7 +3771,7 @@ components:
           pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
           description: |
             Email du client (validation format boundary, cap 100 chars).
-            Persisté dans `customers.email` (COALESCE stickiness).
+            Mémorisé sur la fiche client (conservé si déjà renseigné).
           examples: ["ahmed@example.com"]
         notes:
           type: string
@@ -3782,14 +3780,14 @@ components:
           description: |
             Notes libres sur le client (500 chars max). Visible côté
             dialogue en contexte de la confirmation. Persisté dans
-            `customers.notes` (COALESCE stickiness).
+            les notes de la fiche client (conservées si déjà renseignées).
         language:
           type: string
           nullable: true
           maxLength: 8
           description: |
             Langue préférée du client (`ar`, `fr`). Propagé à
-            `customers.language` + `merchants.default_language`.
+            la langue du client et celle par défaut de la boutique.
           examples: ["ar", "fr"]
     ShopInfoInput:
       type: object
@@ -4034,7 +4032,7 @@ components:
         purpose:
           type: string
           enum: [confirmation, retry, followup_delivery, satisfaction, custom]
-          description: Intention métier de l'appel (stockée dans calls.metadata.purpose_hint).
+          description: Intention métier de l'appel .
         tone:
           type: string
           nullable: true
@@ -4108,7 +4106,7 @@ components:
           additionalProperties: true
           description: |
             Metadata libre du reseller (propagé dans
-            `calls.metadata.reseller_metadata`). Limite : 2 KB
+            vos métadonnées). Limite : 2 KB
             sérialisé JSON compact.
     CallOut:
       type: object
@@ -4129,27 +4127,27 @@ components:
             - ready_to_dial
             - done
           description: |
-            Rail DEMANDE côté Yasmine (M3.6 C2). Cycle nominal :
+            Rail DEMANDE côté Yasmine. Cycle nominal :
             `queued → waiting_user_permission → permission_accepted →
             ready_to_dial → done`. Terminaux échec : `permission_refused`,
             `permission_expired`, `quota_blocked`, `cancelled_by_reseller`.
 
-            **M3.6 C4** — `quota_blocked` couvre 3 cas de quotas guards
+            `quota_blocked` couvre 3 cas de quotas guards
             proactifs (cf `doc/whatsapp.md §4.2-§4.3`) :
             - `templates_quota_24h` : 1 call_permission_request déjà envoyé dans les 24 h glissantes.
             - `templates_quota_7d` : 2 déjà envoyés dans les 7 j glissants.
             - `auto_revoke_imminent_no_answer_streak_4` : 4 NO_ANSWER consécutifs → l'opérateur considère la permission auto-révoquée.
-            Le diagnostic exact est persisté dans `calls.failure_reason`
-            sous la forme `quota:<reason>`. Non exposé dans la réponse 201
+            Le diagnostic exact est conservé sous la forme
+            `quota:<reason>`. Non exposé dans la réponse 201
             initial (transition asynchrone via background task).
         call_status:
           type: string
           enum: [not_started, dialing, ringing, connected, ended, failed, cancelled]
           description: |
-            Rail APPEL côté téléphonie (M3.6 C2). Pilotée par les webhooks
+            Rail APPEL côté téléphonie. Pilotée par les webhooks
             entrants une fois `request_status = ready_to_dial`. Cycle :
             `not_started → dialing → ringing → connected → ended`.
-            Terminaux échec : `failed`, `cancelled` (M3.6 C8 — via POST
+            Terminaux échec : `failed`, `cancelled` (via POST
             `/v1/calls/{id}/cancel`).
         created_at: { type: string, format: date-time }
         merchant_id:
@@ -4195,7 +4193,7 @@ components:
           type: object
           nullable: true
           additionalProperties: true
-        # P0-2 — champs cycle de vie + terminal. Tous nullable : `null`
+        # Champs cycle de vie + terminal. Tous nullable : `null`
         # tant que l'etape n'est pas atteinte.
         ringing_at:
           type: string
@@ -4339,7 +4337,7 @@ components:
           description: |
             Si l'appel a ete annule par le reseller (`POST /v1/calls/{id}/cancel`),
             etat du rail APPEL au moment du cancel. Origine DB
-            `calls.metadata.cancelled_state`.
+            le champ `cancelled_state` de la réponse.
     BalanceOut:
       type: object
       required: [balance_seconds, updated_at]
@@ -4348,8 +4346,8 @@ components:
         balance_seconds:
           type: integer
           description: |
-            Solde en secondes facturables. Peut etre negatif jusqu'a
-            `-MAX_OVERDRAFT_SECONDS` (default -300 s) sur burst concurrent.
+            Solde en secondes facturables. Peut être négatif dans la
+            limite du découvert autorisé (300 s par défaut).
           examples: [3600]
         currency:
           type: string
@@ -4402,7 +4400,7 @@ components:
       required: [data, has_more]
       additionalProperties: false
       description: |
-        Enveloppe paginée `GET /v1/calls` (P1-3). `next_cursor` est un
+        Enveloppe paginée `GET /v1/calls`. `next_cursor` est un
         curseur opaque signé HMAC-SHA256 (TTL 24 h) à passer tel quel au
         `?cursor=` de la requête suivante. `null` = dernière page.
       properties:
@@ -4425,7 +4423,7 @@ components:
       type: object
       description: |
         Legacy schema — conservé pour compat usage interne. Le contrat
-        public `GET /v1/me` retourne `MeOut` (P1-1, 5 champs, anti-BOPLA).
+        public `GET /v1/me` retourne `MeOut` (5 champs, anti-BOPLA).
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -4435,7 +4433,7 @@ components:
     MeOut:
       type: object
       description: |
-        Réponse `GET /v1/me` (P1-1). Anti-BOPLA : ni `balance_seconds`
+        Réponse `GET /v1/me`. Anti-BOPLA : ni `balance_seconds`
         (voir `/v1/me/balance`), ni `status`, ni aucun compteur interne.
 
         Les 10 champs profil société (owner_*, default_language, country,
@@ -4452,8 +4450,8 @@ components:
           type: string
           nullable: true
           description: |
-            Email de contact. Col DB `resellers.contact_email` nullable :
-            `null` si non renseigné à la création.
+            Email de contact, nullable : `null` si non renseigné à la
+            création.
         created_at: { type: string, format: date-time }
         rate_limit_per_minute:
           type: integer
@@ -4529,7 +4527,7 @@ components:
     TransactionOut:
       type: object
       description: |
-        Ligne ledger publique (`GET /v1/me/transactions`, P1-1).
+        Ligne ledger publique (`GET /v1/me/transactions`).
       required: [transaction_id, type, seconds, created_at]
       additionalProperties: false
       properties:
@@ -4558,7 +4556,7 @@ components:
         created_at: { type: string, format: date-time }
     PaginatedTransactions:
       type: object
-      description: Enveloppe paginée `GET /v1/me/transactions` (P1-1).
+      description: Enveloppe paginée `GET /v1/me/transactions`.
       required: [data, has_more]
       additionalProperties: false
       properties:
@@ -4596,7 +4594,7 @@ components:
             `POST /v1/calls/{id}/cancel`).
     WebhookTestOut:
       type: object
-      description: Réponse `POST /v1/me/webhooks/test` (P1-2).
+      description: Réponse `POST /v1/me/webhooks/test`.
       required: [test_id, delivered, latency_ms, target_url, attempted_at]
       additionalProperties: false
       properties:
@@ -4622,7 +4620,7 @@ components:
           description: Extrait tronqué à 200 chars si échec.
     DeliveryOut:
       type: object
-      description: Ligne d'historique webhook publique (P1-2). Anti-BOPLA.
+      description: Ligne d'historique webhook publique. Anti-BOPLA.
       required: [delivery_id, event_type, attempt_count, status, created_at, last_attempted_at]
       additionalProperties: false
       properties:
@@ -4639,12 +4637,12 @@ components:
           type: string
           nullable: true
           description: |
-            URL au moment du POST. `null` sur rows pré-P1-2.
+            URL au moment du POST. `null` sur les lignes antérieures.
         http_status: { type: integer, nullable: true }
         latency_ms:
           type: integer
           nullable: true
-          description: Durée wall-clock en ms. `null` sur rows pré-P1-2.
+          description: Durée wall-clock en ms. `null` sur les lignes antérieures.
         attempt_count:
           type: integer
           description: |
@@ -4666,7 +4664,7 @@ components:
           description: Extrait tronqué à 200 chars si échec.
     PaginatedDeliveries:
       type: object
-      description: Enveloppe paginée `GET /v1/me/webhooks/deliveries` (P1-2).
+      description: Enveloppe paginée `GET /v1/me/webhooks/deliveries`.
       required: [data, has_more]
       additionalProperties: false
       properties:
@@ -4680,8 +4678,8 @@ components:
     UsageOut:
       type: object
       description: |
-        Réponse `GET /v1/me/usage` (P1-1). Fenêtre semi-open
-        `[period_start, period_end)` sur `calls.created_at`. Période
+        Réponse `GET /v1/me/usage`. Fenêtre semi-open
+        `[period_start, period_end)` sur la date de création de l'appel. Période
         sans appel = 200 avec zéros (pas 404).
       required: [period, period_start, period_end, total_calls, total_seconds, breakdown]
       additionalProperties: false
@@ -4740,7 +4738,7 @@ components:
     ApiKey:
       type: object
       description: |
-        Legacy — conservé pour compat. Le contrat public P1-4 utilise
+        Legacy — conservé pour compat. Le contrat public utilise
         `ApiKeyOut` (retourné par `GET /v1/me/api-keys`).
       properties:
         id: { type: string }
@@ -4767,7 +4765,7 @@ components:
               description: Legacy — utiliser `ApiKeyCreatedOut.secret_key`.
     ApiKeyCreateIn:
       type: object
-      description: Body `POST /v1/me/api-keys` (P1-4). `extra="forbid"`.
+      description: Body `POST /v1/me/api-keys`. Tout champ non déclaré est rejeté.
       additionalProperties: false
       properties:
         label:
@@ -4780,7 +4778,7 @@ components:
     ApiKeyOut:
       type: object
       description: |
-        Shape commune GET / DELETE clé API (P1-4). **Anti-BOPLA** :
+        Shape commune GET / DELETE clé API. **Anti-BOPLA** :
         jamais de `key_hash`, jamais de `secret_key` — seul le
         `key_prefix` (12 chars) est exposé.
       required: [id, key_prefix, created_at, status]
@@ -4823,7 +4821,7 @@ components:
             NULL, `revoked` sinon.
     ApiKeyListOut:
       type: object
-      description: Réponse `GET /v1/me/api-keys` (P1-4).
+      description: Réponse `GET /v1/me/api-keys`.
       required: [data]
       additionalProperties: false
       properties:
@@ -4833,7 +4831,7 @@ components:
     ApiKeyCreatedOut:
       type: object
       description: |
-        Réponse `POST /v1/me/api-keys` (P1-4). `secret_key` **visible
+        Réponse `POST /v1/me/api-keys`. `secret_key` **visible
         une seule fois** — à stocker immédiatement côté reseller.
       required: [id, key_prefix, created_at, secret_key]
       additionalProperties: false
@@ -4851,7 +4849,7 @@ components:
     ApiKeyEventOut:
       type: object
       description: |
-        Un event du journal d'audit d'une clé API (P1-6). `api_key_id`
+        Un event du journal d'audit d'une clé API. `api_key_id`
         et `reseller_id` ne sont **pas** exposés (redondants avec
         l'URL et le scope tenant).
       required: [id, event_type, created_at]
@@ -4882,7 +4880,7 @@ components:
     ApiKeyEventListOut:
       type: object
       description: |
-        Enveloppe `GET /v1/me/api-keys/{id}/events` (P1-6) — curseur
+        Enveloppe `GET /v1/me/api-keys/{id}/events` — curseur
         forward-only HMAC, TTL 24 h.
       required: [data, next_cursor, has_more]
       additionalProperties: false
@@ -4918,8 +4916,8 @@ components:
           description: |
             Secret HMAC-SHA256 base64url (256 bits d'entropie). **Affiché
             une seule fois** — à stocker immédiatement côté reseller.
-            Depuis P1-8, format `whsec_<43 chars>`. Les secrets legacy
-            pré-P1-8 (sans préfixe) restent fonctionnels — la vérification
+            Format `whsec_<43 chars>`. Les secrets legacy
+            antérieurs (sans préfixe) restent fonctionnels — la vérification
             HMAC est prefix-agnostique.
           example: "whsec_tAunISmhee9BvK-PpHE5GfXZp_0WnMJwZB6SRbZUpng"
         created_at: { type: string, format: date-time }
@@ -4942,7 +4940,7 @@ components:
     WebhookSecretRotated:
       type: object
       description: |
-        Réponse `POST /v1/me/webhooks/rotate-secret` (P1-8). Pattern
+        Réponse `POST /v1/me/webhooks/rotate-secret`. Pattern
         Stripe — `secret` visible une seule fois.
       required: [secret, secret_prefix, rotated_at]
       additionalProperties: false

@@ -221,11 +221,11 @@ curl -X POST "$BASE/v1/calls" \
   }'
 ```
 
-Cette `metadata` sera persistée côté serveur dans `calls.metadata.reseller_metadata` et vous sera renvoyée telle quelle dans la réponse et (à terme) dans les webhooks sortants.
+Cette `metadata` sera conservée côté serveur et vous sera renvoyée telle quelle dans la réponse et (à terme) dans les webhooks sortants.
 
 ---
 
-## 3.2. Gérer mes clés API (P1-4)
+## 3.2. Gérer mes clés API
 
 Trois endpoints self-service pour créer, lister et révoquer vos clés API.
 
@@ -265,7 +265,7 @@ curl -X DELETE -H "Authorization: Bearer $YK" \
 
 ---
 
-## 3.2.1. Journal d'audit d'une clé API (P1-6)
+## 3.2.1. Journal d'audit d'une clé API
 
 Le serveur enregistre automatiquement trois types d'événements par clé : `created`, `revoked`, `rate_limited`. Utile pour détecter qu'une clé a été spamée (429 multiples) ou pour auditer qui a créé/révoqué quoi et quand.
 
@@ -302,7 +302,7 @@ curl -H "Authorization: Bearer $YK" \
 
 ---
 
-## 3.3. Suivre mon compte (P1-1)
+## 3.3. Suivre mon compte
 
 Trois endpoints de lecture self-service.
 
@@ -313,7 +313,7 @@ Trois endpoints de lecture self-service.
 #    Schéma complet : voir `MeOut` dans `docs/openapi.yaml`.
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me"
 
-# 2. Solde (livré P0-2, non-régressé par P1-1).
+# 2. Solde.
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me/balance"
 # {"balance_seconds":3600,"currency":null,"updated_at":"..."}
 
@@ -345,7 +345,7 @@ Pas de 404 sur période sans appel — la réponse est 200 avec tous les compteu
 
 ---
 
-## 3.4. Lister les appels avec pagination (P1-3)
+## 3.4. Lister les appels avec pagination
 
 `GET /v1/calls` renvoie une **enveloppe paginée** `{data, next_cursor, has_more}`. Tri `created_at DESC` avec tie-break stable `id DESC`.
 
@@ -374,7 +374,7 @@ curl -H "Authorization: Bearer $YK" \
 
 ---
 
-## 3.5. Récupérer un appel + consulter son solde (P0-2)
+## 3.5. Récupérer un appel + consulter son solde
 
 ```bash
 # Lecture d'un appel — scoped tenant, 404 anti-énum si autre reseller / inconnu / UUID invalide
@@ -500,7 +500,7 @@ Réponse (HTTP **422**) :
 }
 ```
 
-### Champs inconnus → 422 `extra_forbidden` (P1-12)
+### Champs inconnus → 422 `extra_forbidden`
 
 Tout champ qui ne fait pas partie du schéma `CallCreate` ou `CustomerInput` est rejeté. Un typo à la racine (par exemple `custommer` au lieu de `customer`) ou à l'intérieur de `customer` (par exemple `phonne_number`) ne passe pas silencieusement — le serveur renvoie **422** avec le chemin exact du champ fautif :
 
@@ -601,7 +601,7 @@ Le self-service `GET /v1/me/balance` arrive en M4 — vous pourrez surveiller vo
 
 ## 7. Annuler un appel en cours
 
-**M3.6 C8** — `POST /v1/calls/{id}/cancel` coupe immédiatement un appel en cours, que le rail APPEL soit en `dialing`, `ringing` ou `connected`.
+`POST /v1/calls/{id}/cancel` coupe immédiatement un appel en cours, que le rail APPEL soit en `dialing`, `ringing` ou `connected`.
 
 ```bash
 CALL_ID="dcaebcdd-a81a-4386-a0df-85d9aaafe862"

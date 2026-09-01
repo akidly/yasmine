@@ -60,24 +60,24 @@ Certains `type` ajoutent des champs dédiés :
 | `forbidden` | 403 | Clé valide mais sans droit sur la ressource. |
 | `not_found` | 404 | Ressource absente ou non accessible au reseller courant. |
 | `conflict` | 409 | Conflit générique (cf slugs spécifiques `idempotency_key_conflict`, `webhook_already_configured`). |
-| `missing_idempotency_key` | 400 | Header `Idempotency-Key` absent sur `POST /v1/calls`. **Obligatoire** depuis P0-1. Générer une clé unique par requête (UUID v4 recommandé). |
+| `missing_idempotency_key` | 400 | Header `Idempotency-Key` absent sur `POST /v1/calls`. **Obligatoire**. Générer une clé unique par requête (UUID v4 recommandé). |
 | `idempotency_key_empty` | 400 | Header `Idempotency-Key` présent mais vide. Doit faire au moins 1 char. |
 | `idempotency_key_too_long` | 400 | Header `Idempotency-Key` > 255 chars. Limite stricte côté serveur. |
 | `idempotency_key_conflict` | 409 | Même `Idempotency-Key` réutilisée avec un body différent dans la fenêtre de 24 h. Générer une nouvelle clé pour une requête différente. Le body original n'est jamais ré-exposé. |
 | `order_external_id_already_exists` | 409 | `POST /v1/calls` avec `order.external_id` déjà utilisé pour ce merchant. Les commandes sont créées par INSERT strict (pas d'upsert) — pour atteindre à nouveau le client sur la même commande, relancer avec une nouvelle `Idempotency-Key` et incrémenter `order.previous_attempts`. Pour créer une commande distincte, utiliser une `external_id` différente. |
-| `api_key_not_found` | 404 | `DELETE /v1/me/api-keys/{key_id}` sur une clé inexistante OU appartenant à un autre reseller (P1-4). Body byte-identique sur les 2 cas — pattern anti-énum P0-2. |
-| `invalid_key_id` | 400 | `DELETE /v1/me/api-keys/{key_id}` avec UUID malformé (P1-4). Se distingue du 404 pour aider le client à diagnostiquer un bug local. |
-| `webhook_url_not_configured` | 400 | `POST /v1/me/webhooks/test` sans webhook actif (P1-2). Configurer d'abord via `POST /v1/me/webhooks`. |
-| `invalid_status_filter` | 400 | `GET /v1/me/webhooks/deliveries?status=...` avec valeur hors `delivered`/`failed`/`pending` (P1-2). Le `detail` liste les valeurs acceptées. |
-| `invalid_period_format` | 400 | `GET /v1/me/usage?period=...` avec format non-`YYYY-MM` ou mois hors 01-12 (P1-1). Exemple : `?period=abc`, `?period=2026-13`, `?period=2026-00`. Remédiation : utiliser le format strict ou omettre (défaut = mois courant UTC). |
-| `invalid_cursor` | 400 | `GET /v1/calls?cursor=...` ou `GET /v1/me/transactions?cursor=...` avec curseur malformé, signature tampered, ou `CURSOR_SIGNING_KEY` tournée côté serveur (P1-3). Le client refait la 1re requête sans `cursor`. |
-| `cursor_expired` | 400 | Curseur > 24 h (TTL fixe, P1-3). Même remédiation : refaire la 1re requête sans `cursor`. |
+| `api_key_not_found` | 404 | `DELETE /v1/me/api-keys/{key_id}` sur une clé inexistante OU appartenant à un autre reseller. Body byte-identique sur les 2 cas — anti-énumération. |
+| `invalid_key_id` | 400 | `DELETE /v1/me/api-keys/{key_id}` avec UUID malformé. Se distingue du 404 pour aider le client à diagnostiquer un bug local. |
+| `webhook_url_not_configured` | 400 | `POST /v1/me/webhooks/test` sans webhook actif. Configurer d'abord via `POST /v1/me/webhooks`. |
+| `invalid_status_filter` | 400 | `GET /v1/me/webhooks/deliveries?status=...` avec valeur hors `delivered`/`failed`/`pending`. Le `detail` liste les valeurs acceptées. |
+| `invalid_period_format` | 400 | `GET /v1/me/usage?period=...` avec format non-`YYYY-MM` ou mois hors 01-12. Exemple : `?period=abc`, `?period=2026-13`, `?period=2026-00`. Remédiation : utiliser le format strict ou omettre (défaut = mois courant UTC). |
+| `invalid_cursor` | 400 | `GET /v1/calls?cursor=...` ou `GET /v1/me/transactions?cursor=...` avec curseur malformé, signature invalide, ou clé de signature tournée côté serveur. Le client refait la 1re requête sans `cursor`. |
+| `cursor_expired` | 400 | Curseur > 24 h (TTL fixe). Même remédiation : refaire la 1re requête sans `cursor`. |
 | `payload_too_large` | 413 | Émis sur `POST /webhooks/whatsapp` quand le corps dépasse 256 KiB. En pratique Meta envoie ~50 Ko. Si vous voyez ce code lors d'une rafale de retries Meta, contactez le support — il s'agit probablement d'un payload falsifié ou d'une anomalie côté Meta. **Pas applicable aux endpoints `/v1/*`**, qui ont leur propre validation. |
 | `validation_error` | 422 | Payload mal formé. Voir `errors`. |
 | `language_not_supported_for_country` | 422 | `POST /v1/calls` avec une combinaison `(country, language)` non disponible. Aujourd'hui : `country=FR` + `language=ar`. Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. Omettre `language` pour appliquer la langue par défaut du pays. |
-| `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé (M3.6 C7). Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
+| `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé. Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
 | `rate_limited` | 429 | Slug par défaut pour les 429 qui ne passent pas par le rate-limiter principal `/v1/*` (cas marginal — un 429 émis directement via `HTTPException(429)` sans override). En pratique vous verrez surtout `rate_limit_exceeded`. Même remédiation : respecter `Retry-After`. |
-| `call_not_found` | 404 | POST `/v1/calls/{id}/cancel` sur un `call_id` inexistant ou appartenant à un autre reseller (M3.6 C8). Pas de leak d'existence. Émis aussi par GET `/v1/calls/{id}/recording` quand l'audio n'a pas été produit (call jamais finalisé) ou pour les mêmes raisons de scoping. |
+| `call_not_found` | 404 | POST `/v1/calls/{id}/cancel` sur un `call_id` inexistant ou appartenant à un autre reseller . Pas de fuite d'existence. Émis aussi par GET `/v1/calls/{id}/recording` quand l'audio n'a pas été produit (call jamais finalisé) ou pour les mêmes raisons de scoping. |
 | `recording_gone` | 410 | GET `/v1/calls/{id}/recording` sur un appel dont l'enregistrement audio a été purgé après la fenêtre de rétention (30 jours). Distinct de `call_not_found` pour permettre au reseller de différencier « jamais existé » vs « a existé mais purgé ». |
 | `webhook_url_rejected` | 400 | POST `/v1/me/webhooks` avec URL rejetée par le SSRF guard. Champ `reason` parmi `invalid_url`/`scheme_not_allowed`/`localhost_rejected`/`dns_resolution_failed`/`private_ip_rejected`. |
 | `webhook_already_configured` | 409 | POST `/v1/me/webhooks` sur reseller déjà configuré. DELETE d'abord pour rotate. |
@@ -88,8 +88,7 @@ Certains `type` ajoutent des champs dédiés :
 
 ## Compatibilité
 
-Les URLs `https://docs.yasmine.akidly.com/errors/{slug}` sont **résolvables
-depuis P1-10** : elles redirigent (302) vers la bonne section de la page
+Les URLs `https://docs.yasmine.akidly.com/errors/{slug}` sont **résolvables** : elles redirigent (302) vers la bonne section de la page
 [errors.html](https://docs.yasmine.akidly.com/errors). Le slug reste
 l'identifiant stable à utiliser côté SDK pour router une classe d'erreur
 — l'URL humaine est un bonus.
@@ -112,8 +111,7 @@ webhooks déjà en prod.
 
 Sections détaillées pour les 5 slugs les plus rencontrés côté reseller.
 Le tool MCP `explain_error` parse ce bloc en priorité, et tombe sur la
-ligne brute du tableau ci-dessus pour les autres slugs. Format stable,
-parsé par regex (voir `yasmine_mcp/introspection.py`).
+ligne brute du tableau ci-dessus pour les autres slugs. Format stable, parsé automatiquement.
 
 ### validation_error
 **Status** : 422
@@ -179,7 +177,7 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
 
 **Remediation** :
 - **Ne pas retry aveuglément** : le solde reste vide, le 402 sera identique. Aucun appel n'est créé, donc pas de double-facturation à craindre — mais bouclage inutile.
-- Consulter le solde courant : `GET /v1/me/balance` (P0-2, live).
+- Consulter le solde courant : `GET /v1/me/balance` (live).
 - Top-up via le support Yasmine.
 - La réponse contient les champs étendus `balance_seconds` et `required_seconds` pour logger le delta exact.
 
@@ -251,7 +249,7 @@ parsé par regex (voir `yasmine_mcp/introspection.py`).
 **Causes** :
 - Curseur opaque malformé (caractères tronqués, copy-paste partiel).
 - Signature HMAC tampered (curseur modifié manuellement côté client).
-- `CURSOR_SIGNING_KEY` rotée côté serveur (tous les curseurs antérieurs invalidés).
+- clé de signature des curseurs rotée côté serveur (tous les curseurs antérieurs invalidés).
 - Confusion entre `invalid_cursor` (format) et `cursor_expired` (TTL > 24 h dépassé) — slug différent, même remédiation.
 
 **Remediation** :

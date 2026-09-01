@@ -70,11 +70,11 @@ Si un nouvel endpoint est annoncé en preview avant implémentation, il sera mar
 
 ## 6. Statut de `/v1` en production
 
-`/v1` est **live** et **commercialisable** depuis M3.3 (2026-04-19) — `POST /v1/calls` est le premier endpoint reseller mis en prod. Les livraisons ultérieures ont étendu la surface **live** :
+`/v1` est **live** et **commercialisable** depuis le 2026-04-19 — `POST /v1/calls` est le premier endpoint reseller mis en prod. Les livraisons ultérieures ont étendu la surface **live** :
 
-- `GET /v1/calls/{call_id}` depuis P0-2 (réconciliation scopée reseller, anti-énumération).
-- `/v1/me/*` (identité, balance, transactions, usage, webhooks, api-keys) depuis P1-1 à P1-4 — 7 routes self-service.
-- Webhooks sortants signés HMAC-SHA256 depuis M3.6 C6 Phase 2 (`call.*` events).
+- `GET /v1/calls/{call_id}` (réconciliation scopée reseller, anti-énumération).
+- `/v1/me/*` (identité, balance, transactions, usage, webhooks, api-keys) — 7 routes self-service.
+- Webhooks sortants signés HMAC-SHA256 (`call.*` events).
 
 L'intégralité des endpoints documentés dans `docs/openapi.yaml` est désormais `x-status: live` (à l'exception de `/healthz` annoté `x-status: internal`, hors SLA `/v1/*`).
 
