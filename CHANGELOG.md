@@ -10,6 +10,18 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Added
 
+- **`call_params.channel` est enfin documenté.** Le champ existait depuis
+  la livraison du canal téléphonique, mais n'apparaissait dans aucune
+  documentation : personne ne pouvait le découvrir en lisant la spec. Deux
+  valeurs, `gsm` et `whatsapp`, et un conseil qui vaut pour presque tout le
+  monde — **omettez-le**, le canal par défaut de votre installation
+  s'applique.
+
+  Nouveau slug `channel_not_available` (422) quand le canal demandé n'est
+  pas ouvert. Le `detail` nomme ceux qui le sont et le canal par défaut. Le
+  refus est explicite à dessein : un appel silencieusement re-routé vers un
+  autre canal serait indétectable de votre côté.
+
 - **Nouvelle ressource catalogue `/v1/shops/{shop_external_id}/products` —
   déclarez vos produits, puis commandez-les par référence.** Cinq routes,
   calquées sur celles des boutiques : `POST`, `GET` (paginé), `GET /{id}`,
@@ -183,6 +195,14 @@ politique de versioning décrite dans `docs/versioning.md`.
   appels antérieurs conservent leur ancienne valeur.
 
 ### Changed
+
+- **Le canal par défaut des appels est désormais le téléphone.** Une demande
+  sans `call_params.channel` sort sur le réseau mobile du client, là où elle
+  partait auparavant en appel WhatsApp. **Aucune action requise** si vous ne
+  précisiez pas ce champ : vos appels aboutissent comme avant, par une autre
+  voie. Si vous demandiez explicitement `whatsapp`, ce canal est aujourd'hui
+  fermé et la requête reçoit `422 channel_not_available` — retirez le champ
+  pour reprendre le cours normal.
 
 - **`order.currency` et `country` deviennent facultatifs sur
   `POST /v1/calls`**, de même que `name` sur une ligne de commande qui

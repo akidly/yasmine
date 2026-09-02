@@ -3407,6 +3407,29 @@ components:
           type: string
           enum: [confirmation, retry, followup_delivery, satisfaction, custom]
           description: Intention métier de l'appel .
+        channel:
+          type: string
+          nullable: true
+          enum: [gsm, whatsapp]
+          description: |
+            Par où l'appel sort. **Omettez ce champ** sauf besoin
+            particulier : le canal par défaut de votre installation
+            s'applique, et c'est le bon dans l'immense majorité des cas.
+
+            - `gsm` — appel téléphonique classique, reçu comme n'importe
+              quel appel sur le réseau mobile du client.
+            - `whatsapp` — appel WhatsApp Business natif.
+
+            **Tous les canaux ne sont pas ouverts partout.** Demander un
+            canal fermé renvoie `422 channel_not_available`, dont le
+            `detail` nomme ceux qui sont disponibles et le canal par
+            défaut. Le refus est volontairement explicite : un appel
+            silencieusement re-routé vers un autre canal que celui demandé
+            serait indétectable de votre côté.
+
+            Si aucune ligne n'est joignable au moment de la demande, la
+            réponse est `503` avec un en-tête `Retry-After` — aucun crédit
+            n'est débité et aucun appel n'est créé.
         tone:
           type: string
           nullable: true

@@ -2201,6 +2201,7 @@ Certains `type` ajoutent des champs dédiés :
 | `payload_too_large` | 413 | Émis sur `POST /webhooks/whatsapp` quand le corps dépasse 256 KiB. En pratique Meta envoie ~50 Ko. Si vous voyez ce code lors d'une rafale de retries Meta, contactez le support — il s'agit probablement d'un payload falsifié ou d'une anomalie côté Meta. **Pas applicable aux endpoints `/v1/*`**, qui ont leur propre validation. |
 | `validation_error` | 422 | Payload mal formé. Voir `errors`. |
 | `language_not_supported_for_country` | 422 | `POST /v1/calls` avec une combinaison `(country, language)` non disponible. Aujourd'hui : `country=FR` + `language=ar`. Combinaisons supportées : `MA`/`DZ`/`TN` avec `ar` ou `fr`, `FR` uniquement avec `fr`. Omettre `language` pour appliquer la langue par défaut du pays. |
+| `channel_not_available` | 422 | `POST /v1/calls` avec un `call_params.channel` fermé sur cette installation. Le `detail` nomme les canaux ouverts et celui par défaut. Omettre `channel` sert le canal par défaut, ce qui convient dans la quasi-totalité des cas. Le refus est explicite à dessein : un appel re-routé en silence vers un autre canal serait indétectable côté intégrateur. |
 | `rate_limit_exceeded` | 429 | Rate-limit par clé API dépassé. Seuils par endpoint : 60/min POST calls, 120/min cancel, 600/min reads, 10/min config webhooks. Respecter `Retry-After` avant de retenter. Cf `docs/getting-started.md` §Rate limits. |
 | `rate_limited` | 429 | Slug par défaut pour les 429 qui ne passent pas par le rate-limiter principal `/v1/*` (cas marginal — un 429 émis directement via `HTTPException(429)` sans override). En pratique vous verrez surtout `rate_limit_exceeded`. Même remédiation : respecter `Retry-After`. |
 | `call_not_found` | 404 | POST `/v1/calls/{id}/cancel` sur un `call_id` inexistant ou appartenant à un autre reseller . Pas de fuite d'existence. Émis aussi par GET `/v1/calls/{id}/recording` quand l'audio n'a pas été produit (call jamais finalisé) ou pour les mêmes raisons de scoping. |
@@ -6120,6 +6121,29 @@ components:
           type: string
           enum: [confirmation, retry, followup_delivery, satisfaction, custom]
           description: Intention métier de l'appel .
+        channel:
+          type: string
+          nullable: true
+          enum: [gsm, whatsapp]
+          description: |
+            Par où l'appel sort. **Omettez ce champ** sauf besoin
+            particulier : le canal par défaut de votre installation
+            s'applique, et c'est le bon dans l'immense majorité des cas.
+
+            - `gsm` — appel téléphonique classique, reçu comme n'importe
+              quel appel sur le réseau mobile du client.
+            - `whatsapp` — appel WhatsApp Business natif.
+
+            **Tous les canaux ne sont pas ouverts partout.** Demander un
+            canal fermé renvoie `422 channel_not_available`, dont le
+            `detail` nomme ceux qui sont disponibles et le canal par
+            défaut. Le refus est volontairement explicite : un appel
+            silencieusement re-routé vers un autre canal que celui demandé
+            serait indétectable de votre côté.
+
+            Si aucune ligne n'est joignable au moment de la demande, la
+            réponse est `503` avec un en-tête `Retry-After` — aucun crédit
+            n'est débité et aucun appel n'est créé.
         tone:
           type: string
           nullable: true
@@ -7110,6 +7134,18 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Added
 
+- **`call_params.channel` est enfin documenté.** Le champ existait depuis
+  la livraison du canal téléphonique, mais n'apparaissait dans aucune
+  documentation : personne ne pouvait le découvrir en lisant la spec. Deux
+  valeurs, `gsm` et `whatsapp`, et un conseil qui vaut pour presque tout le
+  monde — **omettez-le**, le canal par défaut de votre installation
+  s'applique.
+
+  Nouveau slug `channel_not_available` (422) quand le canal demandé n'est
+  pas ouvert. Le `detail` nomme ceux qui le sont et le canal par défaut. Le
+  refus est explicite à dessein : un appel silencieusement re-routé vers un
+  autre canal serait indétectable de votre côté.
+
 - **Nouvelle ressource catalogue `/v1/shops/{shop_external_id}/products` —
   déclarez vos produits, puis commandez-les par référence.** Cinq routes,
   calquées sur celles des boutiques : `POST`, `GET` (paginé), `GET /{id}`,
@@ -7283,6 +7319,14 @@ politique de versioning décrite dans `docs/versioning.md`.
   appels antérieurs conservent leur ancienne valeur.
 
 ### Changed
+
+- **Le canal par défaut des appels est désormais le téléphone.** Une demande
+  sans `call_params.channel` sort sur le réseau mobile du client, là où elle
+  partait auparavant en appel WhatsApp. **Aucune action requise** si vous ne
+  précisiez pas ce champ : vos appels aboutissent comme avant, par une autre
+  voie. Si vous demandiez explicitement `whatsapp`, ce canal est aujourd'hui
+  fermé et la requête reçoit `422 channel_not_available` — retirez le champ
+  pour reprendre le cours normal.
 
 - **`order.currency` et `country` deviennent facultatifs sur
   `POST /v1/calls`**, de même que `name` sur une ligne de commande qui
