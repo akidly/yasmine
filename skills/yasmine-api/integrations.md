@@ -30,7 +30,7 @@ curl -X POST https://api.yasmine.akidly.com/v1/calls \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_external_id": "ma-boutique-test",
+    "shop_external_id": "ma-boutique-test",
     "shop_info": {"name": "Ma Boutique Test"},
     "order": {
       "delivery_address": "12 Rue X, Casablanca",
@@ -173,7 +173,7 @@ curl -X POST https://api.yasmine.akidly.com/v1/calls \
       "name": "Test",
       "phone_number": "+212612345678"
     },
-    "merchant_external_id": "test",
+    "shop_external_id": "test",
     "shop_info": {"name": "Test Shop"},
     "order": {
       "delivery_address": "Rue Test, Casa",

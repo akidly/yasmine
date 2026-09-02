@@ -77,6 +77,16 @@ tags:
       liste, création (secret visible **une seule fois**), révocation
       soft. Pas de scopes, pas d'expiration automatique — la seule
       bascule sécurité est la révocation manuelle.
+  - name: Shops
+    description: |
+      Fiches boutiques : déclarer, consulter, modifier, archiver. Déclarer
+      une boutique ici évite de retransmettre son profil à chaque demande
+      d'appel.
+  - name: Products
+    description: |
+      Catalogue d'une boutique : produits et leurs declinaisons. Un produit
+      declare ici se commande ensuite par simple reference — son nom, son
+      prix et ses variantes n'ont plus a etre repetes a chaque commande.
   - name: Internal
     description: |
       Routes techniques hors SLA `/v1/*` (probe santé). Ne sont **pas**
@@ -123,7 +133,7 @@ paths:
                   customer:
                     name: "Ahmed Bennani"
                     phone_number: "+212612345678"
-                  merchant_external_id: "boutique-casa-01"
+                  shop_external_id: "boutique-casa-01"
                   shop_info:
                     name: "GlowArt Casa"
                   order:
@@ -141,7 +151,7 @@ paths:
                   customer:
                     name: "Ahmed Bennani"
                     phone_number: "+212612345678"
-                  merchant_external_id: "boutique-casa-01"
+                  shop_external_id: "boutique-casa-01"
                   shop_info:
                     name: "GlowArt Casa"
                   order:
@@ -184,7 +194,7 @@ paths:
                   customer:
                     name: "Sophie El Idrissi"
                     phone_number: "+212661111222"
-                  merchant_external_id: "boutique-casa-01"
+                  shop_external_id: "boutique-casa-01"
                   shop_info:
                     name: "GlowArt Casa"
                   order:
@@ -206,10 +216,10 @@ paths:
                     gender: "female"
                     email: "claire@example.com"
                     notes: "VIP, horaires bureau uniquement"
-                  merchant_external_id: "boutique-paris-01"
+                  shop_external_id: "boutique-paris-01"
                   shop_info:
                     name: "GlowArt Paris"
-                    shop_sector: "beauté"
+                    sector: "beauté"
                     tone: "friendly"
                     return_policy: "retour gratuit sous 14 jours"
                   order:
@@ -269,7 +279,7 @@ paths:
         côté serveur (TTL 24 h) — format opaque pour le client, pas
         de structure à parser.
 
-        **Filtres combinables** : `status`, `merchant_id`, `since`,
+        **Filtres combinables** : `status`, `shop_id`, `since`,
         `until`. Tous optionnels.
 
         **Erreurs de curseur** : `400 invalid_cursor` (format invalide,
@@ -325,7 +335,7 @@ paths:
             pour cibler par exemple `?status=ended&result=confirmed`
             (commandes confirmées sans souci).
         - in: query
-          name: merchant_id
+          name: shop_id
           required: false
           schema: { type: string, format: uuid }
         - in: query
@@ -1090,6 +1100,546 @@ paths:
   # -------------------------------------------------------------------------
   # Ops — probe santé (hors SLA /v1/*)
   # -------------------------------------------------------------------------
+  /v1/shops:
+    post:
+      operationId: createShop
+      summary: Déclarer une boutique
+      tags: [Shops]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Enregistre une boutique sur votre compte. **Minimum : `external_id`,
+        `name`, `country`** — tout le reste s'ajoute ensuite par `PATCH`.
+
+        Déclarer la boutique ici vous dispense de retransmettre son profil
+        (`shop_info`) à chaque demande d'appel.
+
+        **Création stricte** : un `external_id` déjà utilisé renvoie un 409,
+        jamais une mise à jour implicite. Pour modifier, utilisez `PATCH`.
+
+        **Pas d'`Idempotency-Key` requise**, contrairement à `POST /v1/calls` :
+        l'unicité de l'`external_id` rend déjà la création rejouable sans
+        risque de doublon. Un rejeu après timeout réseau renvoie un 409, qui
+        confirme que la création initiale a abouti.
+
+        **Téléphones** : `phone` et `whatsapp` sont validés contre le `country`
+        déclaré. Format local (`0522123456`) ou international
+        (`+212522123456`) au choix — les deux sont acceptés tant que le numéro
+        appartient bien à ce pays. Ils sont renvoyés normalisés en E.164.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopCreate" }
+            examples:
+              minimal:
+                summary: Le strict nécessaire
+                value:
+                  external_id: "shop-4471"
+                  name: "GlowArt Casa"
+                  country: "MA"
+              complet:
+                summary: Fiche renseignée
+                value:
+                  external_id: "shop-4471"
+                  name: "GlowArt Casa"
+                  country: "MA"
+                  merchant_external_id: "M-4471"
+                  phone: "0522123456"
+                  whatsapp: "0661234567"
+                  email: "contact@glowart.ma"
+                  address: "12 Rue des Fleurs, Casablanca"
+                  customer_service_hours: "Lun-Sam 9h-18h"
+                  sector: "Cosmétique bio artisanale"
+                  has_physical_store: true
+                  delivery_policy: "Livraison 30 MAD, offerte dès 500 MAD"
+                  delivery_delay: "24-48h"
+                  payment_policy: "Paiement à la livraison ou carte bancaire"
+                  return_policy: "Retour accepté sous 14 jours"
+                  exchange_policy: "Échange sous 30 jours, produit non ouvert"
+                  inspection_before_payment: true
+                  delivery_companies: ["Amana", "CTM"]
+                  city_coverage: ["Casablanca", "Rabat", "Marrakech"]
+      responses:
+        "201":
+          description: Boutique créée.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: |
+            `external_id` déjà utilisé sur ce compte
+            (`shop_external_id_already_exists`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : champ manquant, trop
+            long, chaîne vide, champ inconnu, ou numéro de téléphone qui
+            n'appartient pas au pays déclaré.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    get:
+      operationId: listShops
+      summary: Lister les boutiques
+      tags: [Shops]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Liste paginée des boutiques du compte, triée de la plus récente à
+        la plus ancienne.
+
+        **Pagination** : curseur opaque, valable 24 h. Passez le
+        `next_cursor` de la réponse en `?cursor=` pour la page suivante.
+        Défaut 50 résultats, maximum 200.
+
+        **`?merchant_external_id=`** ne garde que les boutiques d'un même
+        commerçant — c'est ainsi que l'on sait combien de boutiques il
+        possède.
+
+        **`?status=`** vaut `active` par défaut : les boutiques archivées
+        sont masquées. `archived` ne montre qu'elles, `all` ne filtre pas.
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Curseur de la page suivante, tel que renvoyé par `next_cursor`.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
+        - in: query
+          name: merchant_external_id
+          schema: { type: string, maxLength: 128 }
+          description: Ne renvoie que les boutiques de ce commerçant.
+      responses:
+        "200":
+          description: Page de résultats.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedShops" }
+        "400":
+          description: |
+            Curseur malformé, altéré ou expiré (`invalid_cursor`,
+            `cursor_expired`). Refaire la première requête sans `cursor`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/shops/{shop_external_id}:
+    get:
+      operationId: getShop
+      summary: Consulter une boutique
+      tags: [Shops]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Renvoie la fiche complète d'une boutique, adressée par **votre**
+        identifiant.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+      responses:
+        "200":
+          description: Fiche de la boutique.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    patch:
+      operationId: updateShop
+      summary: Modifier une boutique
+      tags: [Shops]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Modification partielle. **Trois cas à distinguer :**
+
+        | Dans le corps | Effet |
+        |---|---|
+        | Champ **absent** | Inchangé |
+        | Champ à **`null`** | **Effacé** |
+        | Champ à **`""`** | Rejeté (422) |
+
+        La chaîne vide est refusée volontairement : sans cela, « effacer »
+        et « mettre une valeur vide » seraient indistinguables.
+
+        ⚠️ Cette sémantique **diffère de `shop_info`** sur `POST /v1/calls`,
+        où un champ absent ou `null` n'efface jamais rien. C'est délibéré :
+        une demande d'appel est du passage, elle ne détruit rien ; un
+        `PATCH` est un geste explicite. Si vous gérez vos boutiques par cet
+        endpoint, cessez d'envoyer `shop_info` dans vos demandes d'appel.
+
+        **`external_id` ne peut pas être modifié** — il porte l'historique
+        des appels de la boutique. L'envoyer produit un 422.
+
+        **Téléphones** : validés contre le pays *effectif* — celui du corps
+        s'il est fourni, sinon celui déjà enregistré. Changer le pays d'une
+        boutique revalide donc ses numéros.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopPatch" }
+            examples:
+              partielle:
+                summary: Deux champs modifiés, un effacé
+                value:
+                  delivery_delay: "24-48h"
+                  payment_policy: "Paiement à la livraison uniquement"
+                  current_promotions: null
+      responses:
+        "200":
+          description: Fiche mise à jour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : chaîne vide, champ
+            inconnu, `external_id` fourni, ou numéro de téléphone qui
+            n'appartient pas au pays de la boutique.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    delete:
+      operationId: archiveShop
+      summary: Archiver une boutique
+      tags: [Shops]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        **La boutique n'est pas supprimée, elle est archivée.** Elle
+        disparaît de la liste par défaut et n'accepte plus de modification,
+        mais tout son historique d'appels reste intact et consultable.
+
+        Pour la retrouver : `GET /v1/shops?status=archived`.
+
+        Archiver une boutique déjà archivée renvoie un 404 —
+        indistinguable d'une boutique inexistante.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+      responses:
+        "204":
+          description: Boutique archivée.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/shops/{shop_external_id}/products:
+    post:
+      operationId: createProduct
+      summary: Déclarer un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Ajoute un produit au catalogue d'une boutique. **Minimum :
+        `external_id` et `name`** — tout le reste s'ajoute par `PATCH`.
+
+        Déclarer un produit ici vous dispense de le décrire à chaque
+        commande : une ligne qui porte `product_external_id` suffit, et
+        `POST /v1/calls` relit le nom, la description, le prix et les
+        déclinaisons depuis ce catalogue.
+
+        **Deux niveaux, comme partout dans le commerce en ligne** : le
+        produit porte l'identité, la variante porte le prix. Un produit sans
+        choix n'y échappe pas — si vous n'envoyez pas de `variants`, une
+        variante unique est créée pour lui, sans identifiant, et `unit_price`
+        s'y dépose. Vous n'avez rien à savoir de tout cela : envoyez un prix,
+        relisez un prix.
+
+        **Dès qu'il y a plusieurs variantes, chacune doit porter son
+        `external_id`** — sans quoi une commande ne pourrait pas désigner
+        laquelle. Le refus est un 422 qui nomme les entrées fautives.
+
+        **Création stricte** : un `external_id` déjà utilisé dans cette
+        boutique renvoie un 409, jamais une mise à jour implicite. Le même
+        identifiant reste libre dans une autre boutique.
+
+        **Pas d'`Idempotency-Key` requise** : l'unicité de l'`external_id`
+        rend déjà la création rejouable sans risque de doublon.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductCreate" }
+            examples:
+              sans_choix:
+                summary: Produit sans déclinaison — un prix, rien d'autre
+                value:
+                  external_id: "TSHIRT-BLANC"
+                  name: "T-shirt blanc en coton"
+                  unit_price: "149.00"
+              avec_variantes:
+                summary: Trois tailles, deux prix
+                value:
+                  external_id: "TSHIRT-BLANC"
+                  name: "T-shirt blanc en coton"
+                  description: "Coton bio 180g, coupe droite"
+                  product_url: "https://boutique.example/p/tshirt-blanc"
+                  variants:
+                    - external_id: "TSH-S"
+                      options: { Taille: "S" }
+                      unit_price: "149.00"
+                    - external_id: "TSH-M"
+                      options: { Taille: "M" }
+                      unit_price: "149.00"
+                    - external_id: "TSH-XL"
+                      options: { Taille: "XL" }
+                      unit_price: "169.00"
+                      compare_at_price: "199.00"
+              catalogue_riche:
+                summary: Fiche complète, avec ce qui prime sur la boutique
+                value:
+                  external_id: "SERUM-VITC"
+                  name: "Sérum vitamine C"
+                  description: "Flacon 30 ml, concentration 15%"
+                  faq_free: "Ne pas utiliser sur peau lésée. Conserver à l'abri de la lumière."
+                  max_discount: "20.00"
+                  return_policy: "Produit d'hygiène : aucun retour une fois ouvert"
+                  current_promotions: "Deuxième flacon à -50%"
+                  unit_price: "320.00"
+      responses:
+        "201":
+          description: Produit créé.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "409":
+          description: |
+            `external_id` déjà utilisé dans cette boutique
+            (`product_external_id_already_exists`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : champ manquant, trop
+            long, chaîne vide, champ inconnu, `external_id` de variante
+            manquant ou en double, `compare_at_price` qui n'est pas
+            supérieur au prix, ou plus de trois axes d'options.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    get:
+      operationId: listProducts
+      summary: Lister les produits d'une boutique
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Liste paginée du catalogue d'une boutique, du produit le plus
+        récent au plus ancien. Chaque fiche est renvoyée complète,
+        variantes comprises.
+
+        **Pagination** : curseur opaque, valable 24 h. Passez le
+        `next_cursor` de la réponse en `?cursor=` pour la page suivante.
+        Défaut 50 résultats, maximum 200.
+
+        **`?status=`** vaut `active` par défaut : les produits archivés sont
+        masqués. `archived` ne montre qu'eux, `all` ne filtre pas.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Curseur de la page suivante, tel que renvoyé par `next_cursor`.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
+      responses:
+        "200":
+          description: Page de résultats.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedProducts" }
+        "400":
+          description: |
+            Curseur malformé, altéré ou expiré (`invalid_cursor`,
+            `cursor_expired`). Refaire la première requête sans `cursor`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/shops/{shop_external_id}/products/{product_external_id}:
+    get:
+      operationId: getProduct
+      summary: Consulter un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Renvoie la fiche complète d'un produit, variantes comprises,
+        adressée par **vos** identifiants.
+
+        `unit_price` n'est présent que si le produit n'a qu'une variante ;
+        sinon, les prix vivent dans `variants`, un par déclinaison.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/ProductExternalId"
+      responses:
+        "200":
+          description: Fiche du produit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    patch:
+      operationId: updateProduct
+      summary: Modifier un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Modification partielle. **Trois cas à distinguer :**
+
+        | Dans le corps | Effet |
+        |---|---|
+        | Champ **absent** | Inchangé |
+        | Champ à **`null`** | **Effacé** |
+        | Champ à **`""`** | Rejeté (422) |
+
+        ⚠️ **`variants` ne se modifie pas ligne à ligne : la liste envoyée
+        remplace entièrement l'ancienne.** Une variante absente de la
+        nouvelle liste est supprimée du catalogue. Pour n'en changer qu'une,
+        relisez le produit, modifiez l'entrée, renvoyez la liste complète.
+        Les commandes déjà passées ne bougent pas — elles ont retenu ce qui
+        leur a été dit au moment de l'appel.
+
+        Ne pas envoyer `variants` du tout les laisse intactes : renommer un
+        produit n'efface pas ses déclinaisons.
+
+        **`unit_price` seul** ne vaut que pour un produit à variante unique.
+        Sur un produit qui en a plusieurs, il est ambigu et refusé (422) :
+        c'est dans `variants` que le prix se pose.
+
+        **`external_id` ne peut pas être modifié** — il porte l'historique
+        des commandes du produit. L'envoyer produit un 422.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/ProductExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductPatch" }
+            examples:
+              fiche:
+                summary: Deux champs modifiés, un effacé
+                value:
+                  description: "Coton bio 180g, coupe droite, col rond"
+                  max_discount: "15.00"
+                  current_promotions: null
+              prix_simple:
+                summary: Nouveau prix d'un produit sans déclinaison
+                value:
+                  unit_price: "159.00"
+              variantes:
+                summary: La liste complète, une taille en moins
+                value:
+                  variants:
+                    - external_id: "TSH-M"
+                      options: { Taille: "M" }
+                      unit_price: "149.00"
+                    - external_id: "TSH-XL"
+                      options: { Taille: "XL" }
+                      unit_price: "169.00"
+      responses:
+        "200":
+          description: Fiche mise à jour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : chaîne vide, champ
+            inconnu, `external_id` fourni, `unit_price` sur un produit à
+            plusieurs variantes, ou liste de variantes incohérente.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    delete:
+      operationId: archiveProduct
+      summary: Archiver un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        **Le produit n'est pas supprimé, il est archivé.** Il disparaît du
+        catalogue par défaut et ne peut plus être commandé, mais les appels
+        qui l'ont mentionné restent intacts et consultables.
+
+        Pour le retrouver : `GET /v1/shops/{shop_external_id}/products?status=archived`.
+
+        Une commande qui le référence après coup est refusée
+        (`order_item_unknown_product`) : mieux vaut un appel qui ne part pas
+        qu'un appel qui annonce au client un article retiré de la vente.
+
+        Archiver un produit déjà archivé renvoie un 404 — indistinguable
+        d'un produit inexistant.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/ProductExternalId"
+      responses:
+        "204":
+          description: Produit archivé.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /healthz:
     get:
       operationId: healthz
@@ -1126,6 +1676,24 @@ components:
         Yasmine (bootstrap). Self-service `POST /v1/me/api-keys` à venir
         en M4.
   parameters:
+    ShopExternalId:
+      in: path
+      name: shop_external_id
+      required: true
+      schema: { type: string, maxLength: 128, pattern: "^[a-zA-Z0-9_.-]+$" }
+      description: |
+        Identifiant de la boutique **dans votre système**, celui fourni à
+        la création. Jamais notre UUID interne.
+      example: "shop-4471"
+    ProductExternalId:
+      in: path
+      name: product_external_id
+      required: true
+      schema: { type: string, maxLength: 128, pattern: "^[a-zA-Z0-9_.-]+$" }
+      description: |
+        Identifiant du produit **dans votre systeme**, celui fourni a la
+        creation. Jamais notre UUID interne.
+      example: "TSHIRT-01"
     RequestIdHeader:
       in: header
       name: X-Request-ID
@@ -1219,6 +1787,31 @@ components:
       schema: { type: integer }
       example: 1714744860
   responses:
+    ShopNotFound:
+      description: |
+        Aucune boutique active avec cet identifiant sur votre compte
+        (`shop_not_found`). **Corps identique dans trois cas** — elle
+        n'existe pas, elle est archivée, ou elle appartient à un autre
+        compte. Une réponse différenciée permettrait de deviner quelles
+        boutiques existent ailleurs.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ProductNotFound:
+      description: |
+        Rien a cette adresse. **Deux slugs possibles**, et le corps ne dit
+        rien de plus :
+
+        - `shop_not_found` — la boutique du chemin est introuvable ;
+        - `product_not_found` — la boutique existe, le produit non.
+
+        Chaque slug couvre **trois situations au corps identique** : cela
+        n'existe pas, c'est archive, ou cela appartient a un autre compte.
+        Une reponse differenciee permettrait de deviner ce qui existe
+        ailleurs.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     Unauthorized:
       description: Clé API absente, invalide ou révoquée.
       content:
@@ -1367,6 +1960,947 @@ components:
             instance: /v1/calls
             request_id: a1b2c3d4
   schemas:
+    # --- Boutiques -------------------------------------------------------
+    # ⚠️ Ces quatre schemas sont GENERES depuis les modeles Pydantic
+    # (`api/v1/schemas.py`) puis convertis au dialecte OpenAPI 3.0. Ne pas
+    # les editer a la main : la spec et le code divergeraient, exactement
+    # le defaut trouve le 2026-09-02 sur `inspection_before_payment`
+    # (declare dans la spec, absent du schema, donc 422 alors que la doc
+    # l'annoncait). Pour les regenerer : voir `scripts/gen_api_schemas.py`.
+    ShopCreate:
+      additionalProperties: false
+      description: 'Payload `POST /v1/shops`. Minimum : `external_id`, `name`, `country`.'
+      properties:
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+        country:
+          enum:
+          - MA
+          - DZ
+          - TN
+          type: string
+        default_language:
+          enum:
+          - ar
+          - fr
+          type: string
+          nullable: true
+          description: 'Registre habituel : `ar` (darija locale) ou `fr`. Sert de defaut quand
+            une demande d''appel ne precise pas la langue. Ce n''est PAS un choix de dialecte
+            : celui-ci se deduit du pays du client appele.'
+        merchant_external_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          nullable: true
+          description: Identifiant du commercant proprietaire, tel qu'il existe chez vous. Regroupe
+            plusieurs boutiques sous un meme commercant. A ne pas confondre avec `external_id`,
+            qui identifie LA boutique.
+          example: M-4471
+        phone:
+          maxLength: 30
+          minLength: 1
+          type: string
+          nullable: true
+          description: Telephone de la boutique. Format local ou international accepte, mais le
+            numero doit appartenir au pays declare. Renvoye normalise en E.164.
+          example: '0522123456'
+        whatsapp:
+          maxLength: 30
+          minLength: 1
+          type: string
+          nullable: true
+          description: Numero WhatsApp, memes regles que `phone`.
+        email:
+          maxLength: 100
+          minLength: 1
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          type: string
+          nullable: true
+          description: Email de contact. Normalise en minuscules.
+        address:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        customer_service_hours:
+          maxLength: 100
+          minLength: 1
+          type: string
+          nullable: true
+          description: Horaires du service client, texte libre.
+          example: Lun-Sam 9h-18h
+        website_url:
+          maxLength: 255
+          minLength: 1
+          pattern: ^https?://[^\s]+$
+          type: string
+          nullable: true
+        sector:
+          maxLength: 50
+          minLength: 1
+          type: string
+          nullable: true
+          description: Secteur d'activite, texte libre. « Boutique de cosmetique bio artisanale
+            » informe mieux qu'un code ferme.
+        has_physical_store:
+          type: boolean
+          nullable: true
+          description: Point de vente ou le client peut se presenter ? `true` oui, `false` vente
+            a distance uniquement, absent = non declare. Repond a « puis-je venir ? », question
+            que `address` ne tranche pas.
+        delivery_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        delivery_delay:
+          maxLength: 100
+          minLength: 1
+          type: string
+          nullable: true
+        payment_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        return_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        exchange_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        warranty_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        inspection_before_payment:
+          type: boolean
+          nullable: true
+        faq_free:
+          maxLength: 1500
+          minLength: 1
+          type: string
+          nullable: true
+        current_promotions:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        max_discount:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: Remise maximale que l'agent pourra accorder. Interpretee dans la devise
+            du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND).
+          nullable: true
+        delivery_companies:
+          items:
+            maxLength: 60
+            minLength: 1
+            type: string
+          maxItems: 10
+          type: array
+          nullable: true
+          description: Transporteurs avec lesquels la boutique travaille.
+        city_coverage:
+          items:
+            maxLength: 80
+            minLength: 1
+            type: string
+          maxItems: 200
+          type: array
+          nullable: true
+          description: 'Villes livrees. **Present = liste fermee** : l''agent annonce la non-livraison
+            ailleurs. Absent = aucune restriction.'
+        tone:
+          enum:
+          - formal
+          - friendly
+          - default
+          type: string
+          nullable: true
+        agent_name:
+          maxLength: 40
+          minLength: 1
+          pattern: ^[A-Za-zÀ-ÿ؀-ۿ][A-Za-zÀ-ÿ؀-ۿ \.'\-]*$
+          type: string
+          nullable: true
+          description: 'Prenom de l''agent. Defaut : Yasmine.'
+        voice_id:
+          maxLength: 32
+          minLength: 1
+          type: string
+          nullable: true
+        max_call_duration_seconds:
+          maximum: 600
+          minimum: 30
+          type: integer
+          nullable: true
+        external_id:
+          description: Identifiant de la boutique dans VOTRE systeme. Sert d'adresse dans l'URL,
+            d'ou le jeu de caracteres restreint. **Immuable** apres creation.
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          example: shop-4471
+      required:
+      - name
+      - country
+      - external_id
+      type: object
+    ShopPatch:
+      additionalProperties: false
+      description: 'Payload `PATCH /v1/shops/{external_id}` — modification partielle.
+
+
+        Semantique, differente de l''upsert des demandes d''appel :
+
+
+        - champ **absent** -> inchange
+
+        - champ a **`null`** -> **efface**
+
+        - champ a **`""`** -> 422
+
+
+        `external_id` n''est volontairement pas declare : l''envoyer produit un
+
+        422 `extra_forbidden`, ce qui evite de renommer par megarde une
+
+        boutique qui porte des mois d''historique d''appels.'
+      properties:
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+          nullable: true
+          description: Nom commercial, prononce par l'agent au telephone.
+          example: GlowArt Casa
+        country:
+          enum:
+          - MA
+          - DZ
+          - TN
+          type: string
+          nullable: true
+          description: Pays d'etablissement de la boutique. Determine le format attendu de `phone`
+            et `whatsapp`, le fuseau horaire, et la devise dans laquelle `max_discount` est interprete.
+          example: MA
+        default_language:
+          enum:
+          - ar
+          - fr
+          type: string
+          nullable: true
+          description: 'Registre habituel : `ar` (darija locale) ou `fr`. Sert de defaut quand
+            une demande d''appel ne precise pas la langue. Ce n''est PAS un choix de dialecte
+            : celui-ci se deduit du pays du client appele.'
+        merchant_external_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          nullable: true
+          description: Identifiant du commercant proprietaire, tel qu'il existe chez vous. Regroupe
+            plusieurs boutiques sous un meme commercant. A ne pas confondre avec `external_id`,
+            qui identifie LA boutique.
+          example: M-4471
+        phone:
+          maxLength: 30
+          minLength: 1
+          type: string
+          nullable: true
+          description: Telephone de la boutique. Format local ou international accepte, mais le
+            numero doit appartenir au pays declare. Renvoye normalise en E.164.
+          example: '0522123456'
+        whatsapp:
+          maxLength: 30
+          minLength: 1
+          type: string
+          nullable: true
+          description: Numero WhatsApp, memes regles que `phone`.
+        email:
+          maxLength: 100
+          minLength: 1
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          type: string
+          nullable: true
+          description: Email de contact. Normalise en minuscules.
+        address:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        customer_service_hours:
+          maxLength: 100
+          minLength: 1
+          type: string
+          nullable: true
+          description: Horaires du service client, texte libre.
+          example: Lun-Sam 9h-18h
+        website_url:
+          maxLength: 255
+          minLength: 1
+          pattern: ^https?://[^\s]+$
+          type: string
+          nullable: true
+        sector:
+          maxLength: 50
+          minLength: 1
+          type: string
+          nullable: true
+          description: Secteur d'activite, texte libre. « Boutique de cosmetique bio artisanale
+            » informe mieux qu'un code ferme.
+        has_physical_store:
+          type: boolean
+          nullable: true
+          description: Point de vente ou le client peut se presenter ? `true` oui, `false` vente
+            a distance uniquement, absent = non declare. Repond a « puis-je venir ? », question
+            que `address` ne tranche pas.
+        delivery_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        delivery_delay:
+          maxLength: 100
+          minLength: 1
+          type: string
+          nullable: true
+        payment_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        return_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        exchange_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        warranty_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        inspection_before_payment:
+          type: boolean
+          nullable: true
+        faq_free:
+          maxLength: 1500
+          minLength: 1
+          type: string
+          nullable: true
+        current_promotions:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+        max_discount:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: Remise maximale que l'agent pourra accorder. Interpretee dans la devise
+            du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND).
+          nullable: true
+        delivery_companies:
+          items:
+            maxLength: 60
+            minLength: 1
+            type: string
+          maxItems: 10
+          type: array
+          nullable: true
+          description: Transporteurs avec lesquels la boutique travaille.
+        city_coverage:
+          items:
+            maxLength: 80
+            minLength: 1
+            type: string
+          maxItems: 200
+          type: array
+          nullable: true
+          description: 'Villes livrees. **Present = liste fermee** : l''agent annonce la non-livraison
+            ailleurs. Absent = aucune restriction.'
+        tone:
+          enum:
+          - formal
+          - friendly
+          - default
+          type: string
+          nullable: true
+        agent_name:
+          maxLength: 40
+          minLength: 1
+          pattern: ^[A-Za-zÀ-ÿ؀-ۿ][A-Za-zÀ-ÿ؀-ۿ \.'\-]*$
+          type: string
+          nullable: true
+          description: 'Prenom de l''agent. Defaut : Yasmine.'
+        voice_id:
+          maxLength: 32
+          minLength: 1
+          type: string
+          nullable: true
+        max_call_duration_seconds:
+          maximum: 600
+          minimum: 30
+          type: integer
+          nullable: true
+      type: object
+    ShopOut:
+      additionalProperties: false
+      description: Fiche boutique renvoyee par `/v1/shops`.
+      properties:
+        id:
+          description: Identifiant interne Yasmine, a citer au support.
+          format: uuid
+          type: string
+        external_id:
+          type: string
+        name:
+          type: string
+        country:
+          type: string
+          nullable: true
+        default_language:
+          type: string
+          nullable: true
+        merchant_external_id:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        whatsapp:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        customer_service_hours:
+          type: string
+          nullable: true
+        website_url:
+          type: string
+          nullable: true
+        sector:
+          type: string
+          nullable: true
+        has_physical_store:
+          type: boolean
+          nullable: true
+        delivery_policy:
+          type: string
+          nullable: true
+        delivery_delay:
+          type: string
+          nullable: true
+        payment_policy:
+          type: string
+          nullable: true
+        return_policy:
+          type: string
+          nullable: true
+        exchange_policy:
+          type: string
+          nullable: true
+        warranty_policy:
+          type: string
+          nullable: true
+        inspection_before_payment:
+          type: boolean
+          nullable: true
+        faq_free:
+          type: string
+          nullable: true
+        current_promotions:
+          type: string
+          nullable: true
+        max_discount:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          nullable: true
+        delivery_companies:
+          items:
+            type: string
+          type: array
+          nullable: true
+        city_coverage:
+          items:
+            type: string
+          type: array
+          nullable: true
+        tone:
+          type: string
+          nullable: true
+        agent_name:
+          type: string
+          nullable: true
+        voice_id:
+          type: string
+          nullable: true
+        max_call_duration_seconds:
+          type: integer
+          nullable: true
+        status:
+          description: Calcule depuis `archived_at`.
+          enum:
+          - active
+          - archived
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        archived_at:
+          format: date-time
+          type: string
+          nullable: true
+      required:
+      - id
+      - external_id
+      - name
+      - status
+      - created_at
+      - updated_at
+      type: object
+    PaginatedShops:
+      additionalProperties: false
+      description: Enveloppe paginee `GET /v1/shops`.
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/ShopOut'
+          type: array
+        next_cursor:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+      required:
+      - data
+      - has_more
+      type: object
+    ProductVariantInput:
+      additionalProperties: false
+      description: 'Une variante declaree dans un produit.
+
+
+        `external_id` est **conditionnellement requis** : facultatif si le
+
+        produit n''a qu''une variante, obligatoire des qu''il en a plusieurs —
+
+        sinon une commande ne pourrait pas designer laquelle. La verification
+
+        porte sur la liste entiere, pas sur une entree isolee.'
+      properties:
+        external_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          nullable: true
+          description: Identifiant de la variante dans VOTRE systeme. Facultatif si le produit
+            n'en a qu'une, obligatoire des qu'il en a plusieurs.
+          example: TSH-XL
+        options:
+          additionalProperties:
+            type: string
+          type: object
+          nullable: true
+          description: 'Ce qui distingue cette variante : `{"Taille": "XL"}`. Trois axes au maximum.
+            Vide ou absent pour un produit sans choix.'
+          example:
+            Couleur: rouge
+            Taille: XL
+        unit_price:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: Prix de CETTE variante, dans la devise du pays de la boutique. C'est ici
+            que vit le prix — le XL peut couter plus cher que le S.
+          nullable: true
+        compare_at_price:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: 'Prix barre, pour valoriser une remise : « c''etait 300, vous l''avez a
+            250 ». **Doit etre superieur a `unit_price`** — l''inverse serait forcement une erreur
+            de saisie.'
+          nullable: true
+        sku:
+          maxLength: 50
+          minLength: 1
+          type: string
+          nullable: true
+          description: Reference de stock, a votre usage. Conservee telle quelle et renvoyee dans
+            les lectures ; jamais prononcee au client.
+          example: TSH-BLC-XL
+      type: object
+    ProductCreate:
+      additionalProperties: false
+      description: 'Payload `POST /v1/shops/{id}/products`. Minimum : `external_id`, `name`.'
+      properties:
+        name:
+          description: Nom du produit tel qu'il sera prononce au client. Ecrivez-le comme on le
+            dit, pas comme on le reference en base.
+          maxLength: 150
+          minLength: 1
+          type: string
+          example: T-shirt blanc en coton
+        description:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: Matiere, contenu, usage. Sert a repondre aux questions du client sur l'article
+            ; n'est pas recitee d'office.
+        product_url:
+          maxLength: 300
+          minLength: 1
+          pattern: ^https?://[^\s]+$
+          type: string
+          nullable: true
+          description: Lien vers la fiche produit sur votre site. Conserve pour vos propres besoins
+            et vos exports ; jamais lu au telephone.
+          example: https://boutique.example/produits/tshirt-blanc
+        faq_free:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Connaissance libre sur le produit : composition, usage, contre-indications,
+            objections frequentes. L''agent s''en sert pour repondre — il ne la recite pas.'
+        max_discount:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: 'Remise maximale sur ce produit. Absent : celle de la boutique s''applique.
+            Sur une commande a plusieurs produits, c''est **la plus haute** qui vaut — et une
+            valeur a `0` ne bloque rien, elle signifie seulement que ce produit n''apporte pas
+            de marge.'
+          nullable: true
+        return_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Politique de retour propre a ce produit — hygiene, sur-mesure. Absent
+            : celle de la boutique s''applique.'
+        current_promotions:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Promotion sur ce produit. S''ajoute a celle de la boutique, elle ne la
+            remplace pas : les deux sont vraies.'
+        unit_price:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: '**Raccourci pour un produit sans choix.** Le prix est pose sur la variante
+            unique, creee automatiquement. En lecture, ce champ renvoie ce prix — mais seulement
+            si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.'
+          nullable: true
+        variants:
+          items:
+            $ref: '#/components/schemas/ProductVariantInput'
+          maxItems: 60
+          type: array
+          nullable: true
+          description: 'Les declinaisons vendables. **Absent : le produit recoit une variante
+            unique** portant `unit_price` — vous n''avez rien a declarer pour un produit sans
+            choix.
+
+
+            Sur un `PATCH`, la liste envoyee **remplace entierement** l''ancienne ; une variante
+            qui n''y figure plus est supprimee. Les commandes deja passees ne bougent pas.'
+        external_id:
+          description: Identifiant du produit dans VOTRE systeme. Sert d'adresse dans l'URL, d'ou
+            le jeu de caracteres restreint. **Immuable** apres creation.
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          example: TSHIRT-01
+      required:
+      - name
+      - external_id
+      type: object
+    ProductPatch:
+      additionalProperties: false
+      description: 'Payload `PATCH` — modification partielle.
+
+
+        Champ **absent** = inchange, champ a **`null`** = efface, chaine vide =
+
+        422. Meme semantique que sur les boutiques.
+
+
+        `external_id` n''est pas declare : l''envoyer produit un 422, ce qui evite
+
+        de renommer par megarde un produit deja commande.'
+      properties:
+        name:
+          maxLength: 150
+          minLength: 1
+          type: string
+          nullable: true
+          description: Nom du produit tel qu'il sera prononce au client. Ecrivez-le comme on le
+            dit, pas comme on le reference en base.
+          example: T-shirt blanc en coton
+        description:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: Matiere, contenu, usage. Sert a repondre aux questions du client sur l'article
+            ; n'est pas recitee d'office.
+        product_url:
+          maxLength: 300
+          minLength: 1
+          pattern: ^https?://[^\s]+$
+          type: string
+          nullable: true
+          description: Lien vers la fiche produit sur votre site. Conserve pour vos propres besoins
+            et vos exports ; jamais lu au telephone.
+          example: https://boutique.example/produits/tshirt-blanc
+        faq_free:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Connaissance libre sur le produit : composition, usage, contre-indications,
+            objections frequentes. L''agent s''en sert pour repondre — il ne la recite pas.'
+        max_discount:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: 'Remise maximale sur ce produit. Absent : celle de la boutique s''applique.
+            Sur une commande a plusieurs produits, c''est **la plus haute** qui vaut — et une
+            valeur a `0` ne bloque rien, elle signifie seulement que ce produit n''apporte pas
+            de marge.'
+          nullable: true
+        return_policy:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Politique de retour propre a ce produit — hygiene, sur-mesure. Absent
+            : celle de la boutique s''applique.'
+        current_promotions:
+          maxLength: 250
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Promotion sur ce produit. S''ajoute a celle de la boutique, elle ne la
+            remplace pas : les deux sont vraies.'
+        unit_price:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: '**Raccourci pour un produit sans choix.** Le prix est pose sur la variante
+            unique, creee automatiquement. En lecture, ce champ renvoie ce prix — mais seulement
+            si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.'
+          nullable: true
+        variants:
+          items:
+            $ref: '#/components/schemas/ProductVariantInput'
+          maxItems: 60
+          type: array
+          nullable: true
+          description: 'Les declinaisons vendables. **Absent : le produit recoit une variante
+            unique** portant `unit_price` — vous n''avez rien a declarer pour un produit sans
+            choix.
+
+
+            Sur un `PATCH`, la liste envoyee **remplace entierement** l''ancienne ; une variante
+            qui n''y figure plus est supprimee. Les commandes deja passees ne bougent pas.'
+      type: object
+    ProductVariantOut:
+      additionalProperties: false
+      description: Une variante, telle que renvoyee.
+      properties:
+        id:
+          format: uuid
+          type: string
+        external_id:
+          type: string
+          nullable: true
+          description: '`null` sur la variante d''un produit sans choix : vous ne l''avez pas
+            nommee, et vous n''avez pas a le faire.'
+        options:
+          additionalProperties:
+            type: string
+          type: object
+        unit_price:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          nullable: true
+        compare_at_price:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          nullable: true
+        sku:
+          type: string
+          nullable: true
+        position:
+          description: 'Rang de la variante dans le produit, a partir de 0 — celui de la liste
+            que vous avez envoyee. Il rend les lectures stables : deux appels successifs renvoient
+            les variantes dans le meme ordre.'
+          type: integer
+      required:
+      - id
+      - options
+      - position
+      type: object
+    ProductOut:
+      additionalProperties: false
+      description: Fiche produit complete, variantes comprises.
+      properties:
+        id:
+          format: uuid
+          type: string
+        external_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        product_url:
+          type: string
+          nullable: true
+        faq_free:
+          type: string
+          nullable: true
+        max_discount:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          nullable: true
+        return_policy:
+          type: string
+          nullable: true
+        current_promotions:
+          type: string
+          nullable: true
+        unit_price:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: Prix de la variante unique. **Absent si le produit a plusieurs variantes**
+            — lire `variants` dans ce cas.
+          nullable: true
+        variants:
+          items:
+            $ref: '#/components/schemas/ProductVariantOut'
+          type: array
+        status:
+          enum:
+          - active
+          - archived
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        archived_at:
+          format: date-time
+          type: string
+          nullable: true
+      required:
+      - id
+      - external_id
+      - name
+      - variants
+      - status
+      - created_at
+      - updated_at
+      type: object
+    PaginatedProducts:
+      additionalProperties: false
+      description: Enveloppe paginee `GET /v1/shops/{id}/products`.
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/ProductOut'
+          type: array
+        next_cursor:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+      required:
+      - data
+      - has_more
+      type: object
     # -----------------------------------------------------------------------
     # Problem (RFC 7807)
     # -----------------------------------------------------------------------
@@ -1467,10 +3001,36 @@ components:
       required: [name]
       additionalProperties: false
       description: |
-        Sous-objet `shop_info` (Phase 2-final). Profil boutique : identité,
-        SAV, politiques, commercial. `name` requis, reste optionnel avec
-        stickiness COALESCE côté persistance (valeur renseignée jamais
-        écrasée par un POST ultérieur sans ce champ).
+        Sous-objet `shop_info`. Profil boutique : identité, coordonnées,
+        politiques, commercial. `name` requis, reste optionnel. Un champ
+        absent ou `null` **n'efface jamais** une valeur déjà enregistrée :
+        un appel enrichit la fiche, il ne la détruit pas.
+
+        **Préférez `/v1/shops`.** La fiche boutique se déclare une fois
+        via `POST /v1/shops`, puis se modifie par `PATCH` — inutile de
+        la retransmettre à chaque appel. `shop_info` reste supporté pour
+        les intégrations qui envoient tout en une requête. Attention si
+        vous mélangez les deux : le `PATCH` efface sur `null`, `shop_info`
+        non — mieux vaut choisir une seule porte par boutique.
+
+        ### Changements du 2026-09-01
+
+        **Renommés** (l'ancien nom renvoie désormais un 422) :
+
+        | Avant | Après |
+        |---|---|
+        | `shop_phone_sav` | `phone` |
+        | `shop_email_sav` | `email` |
+        | `shop_whatsapp_sav` | `whatsapp` |
+        | `size_exchange_policy` | `exchange_policy` |
+
+        **Retirés du contrat** — les envoyer renvoie un 422 :
+
+        - `loyalty_program` — programme de fidélité
+
+        **Déprécié** : `industry`, `active`, `logo_url` restent acceptés et
+        enregistrés, mais ne sont pas exploités et disparaîtront après
+        préavis `Sunset`.
       properties:
         name:
           type: string
@@ -1478,19 +3038,104 @@ components:
           maxLength: 200
           description: Nom commercial affiché côté agent vocal + dashboard.
           examples: ["GlowArt Casa"]
-        shop_sector: { type: string, nullable: true, maxLength: 50 }
-        industry: { type: string, nullable: true, maxLength: 32 }
-        active: { type: boolean, nullable: true }
-        logo_url: { type: string, nullable: true, maxLength: 255 }
-        shop_phone_sav: { type: string, nullable: true, maxLength: 30 }
-        shop_email_sav:
+        sector: { type: string, nullable: true, maxLength: 50 }
+        merchant_external_id:
+          type: string
+          nullable: true
+          maxLength: 128
+          pattern: "^[a-zA-Z0-9_.-]+$"
+          example: "M-4471"
+          description: >-
+            Identifiant du commerçant propriétaire de cette boutique, tel
+            qu'il existe dans votre système. Sert à **regrouper plusieurs
+            boutiques sous un même commerçant** : `GET /v1/shops` accepte
+            ce champ en filtre.
+
+            ⚠️ À ne pas confondre avec `shop_external_id`, qui identifie
+            LA boutique. Celui-ci identifie son propriétaire, et plusieurs
+            boutiques partagent la même valeur — c'est son objet.
+
+            C'est une clé de regroupement, pas une fiche : le commerçant
+            n'a pas d'attributs propres aujourd'hui (ni nom, ni contact).
+            Si ce besoin apparaît, une ressource dédiée sera ajoutée sans
+            que ce champ change de sens.
+        has_physical_store:
+          type: boolean
+          nullable: true
+          description: >-
+            La boutique dispose-t-elle d'un point de vente physique où le
+            client peut se présenter ? Trois états : `true` oui, `false`
+            vente à distance uniquement, absent ou `null` non déclaré.
+            **Distinct de `address`** : celle-ci dit *où* vous êtes,
+            celui-ci dit si le client *peut venir* — un vendeur en ligne a
+            souvent une adresse (entrepôt, domicile) qu'il ne souhaite pas
+            voir communiquée comme lieu de visite. Enregistré sur la fiche
+            boutique, pas encore exploité pendant l'appel — activation
+            prévue.
+        industry:
+          type: string
+          nullable: true
+          maxLength: 32
+          deprecated: true
+          description: >-
+            **Déprécié (2026-09-01).** Fait doublon avec `sector`, seul
+            champ de classement exploité pendant l'appel. Toujours accepté
+            et enregistré pour ne casser aucune intégration existante ;
+            retrait après préavis `Sunset`. Ne rien construire dessus.
+        active:
+          type: boolean
+          nullable: true
+          deprecated: true
+          description: >-
+            **Déprécié (2026-09-01).** Remplacé par l'archivage de la fiche
+            boutique (`DELETE /v1/shops/{shop_external_id}`), qui
+            expose l'état réel via le champ `status`.
+        logo_url:
+          type: string
+          nullable: true
+          maxLength: 255
+          deprecated: true
+          description: >-
+            **Déprécié (2026-09-01).** Jamais exploité pendant l'appel.
+        phone:
+          type: string
+          nullable: true
+          maxLength: 30
+          description: >-
+            Téléphone de la boutique, communicable au client pendant
+            l'appel. **Renomme `shop_phone_sav` depuis le 2026-09-01** : la
+            distinction service après-vente / ligne principale n'avait pas
+            de réalité pour la majorité des boutiques. L'ancien nom est
+            désormais refusé (422).
+        email:
           type: string
           nullable: true
           maxLength: 100
           pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
-        shop_whatsapp_sav: { type: string, nullable: true, maxLength: 30 }
-        shop_sav_hours: { type: string, nullable: true, maxLength: 100 }
-        shop_address: { type: string, nullable: true, maxLength: 250 }
+          description: >-
+            Email de contact de la boutique. **Renomme `shop_email_sav`
+            depuis le 2026-09-01.** L'ancien nom est refusé (422).
+        whatsapp:
+          type: string
+          nullable: true
+          maxLength: 30
+          description: >-
+            Numéro WhatsApp de la boutique. **Renomme `shop_whatsapp_sav`
+            depuis le 2026-09-01.** L'ancien nom est refusé (422).
+        address: { type: string, nullable: true, maxLength: 250 }
+        customer_service_hours:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: >-
+            Horaires du service client, en texte libre (ex. « Lun-Sam
+            9h-18h »). L'agent s'en sert pour répondre au client qui
+            demande quand vous joindre.
+        website_url:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: Site web de la boutique.
         delivery_policy: { type: string, nullable: true, maxLength: 250 }
         delivery_delay:
           type: string
@@ -1505,14 +3150,30 @@ components:
             conditions de livraison).
         payment_policy: { type: string, nullable: true, maxLength: 250 }
         return_policy: { type: string, nullable: true, maxLength: 250 }
-        size_exchange_policy: { type: string, nullable: true, maxLength: 250 }
+        exchange_policy:
+          type: string
+          nullable: true
+          maxLength: 250
+          description: >-
+            Conditions d'échange d'un article : taille, couleur, modèle,
+            article défectueux. **Renomme `size_exchange_policy` depuis le
+            2026-09-01** — l'ancien nom restreignait la réponse aux seules
+            questions de taille. L'ancien nom est refusé (422).
         warranty_policy: { type: string, nullable: true, maxLength: 250 }
+        inspection_before_payment:
+          type: boolean
+          nullable: true
+          description: >-
+            Le client peut-il ouvrir le colis avant de payer ? Trois états :
+            `true` autorisé, `false` refusé, absent ou `null` non déclaré.
+            La distinction compte : sur `null` l'agent n'aborde pas le
+            sujet, alors qu'un `false` explicite lui permet de répondre.
+            Enregistré sur la fiche boutique, pas encore exploité pendant
+            l'appel — activation prévue.
         current_promotions: { type: string, nullable: true, maxLength: 250 }
-        loyalty_program: { type: string, nullable: true, maxLength: 250 }
         faq_free: { type: string, nullable: true, maxLength: 1500 }
     OrderItem:
       type: object
-      required: [name]
       additionalProperties: false
       description: |
         Article structuré d'une commande (entrée de `OrderInput.items`).
@@ -1520,6 +3181,34 @@ components:
         d'items, OU un résumé libre via `items_text`, OU les deux. Si les
         deux sont fournis, la liste structurée prime au moment de l'appel.
       properties:
+        product_external_id:
+          type: string
+          nullable: true
+          maxLength: 128
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          examples: ["TSHIRT-BLANC"]
+          description: |
+            Renvoie a un produit declare dans le catalogue de la boutique.
+            Son nom, sa description, son prix et ses declinaisons sont alors
+            lus depuis le catalogue : inutile de les repeter a chaque
+            commande. Ce que vous fournissez malgre tout l'emporte — un prix
+            promotionnel valable pour cette commande-la reste possible.
+            Sans ce champ, decrivez l'article sur place avec `name` : c'est
+            la voie pour un article sur mesure, des frais de port ou un
+            cadeau. Un produit absent du catalogue ne bloque jamais un appel.
+        variant_external_id:
+          type: string
+          nullable: true
+          maxLength: 128
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          examples: ["TSHIRT-BLANC-XL"]
+          description: |
+            Precise quelle declinaison du produit — taille, couleur. Inutile
+            si le produit n'en a qu'une : elle est retenue automatiquement.
+            S'il en a plusieurs et qu'aucune n'est designee, la requete est
+            refusee en listant celles qui existent
+            (`order_item_variant_required`). Aucune n'est choisie au hasard :
+            l'appel annoncerait au client un article qu'il n'a pas commande.
         name:
           type: string
           minLength: 1
@@ -1609,17 +3298,17 @@ components:
           examples: ["120.00"]
     OrderInput:
       type: object
-      required: [amount, currency]
+      required: [amount]
       additionalProperties: false
       description: |
-        Sous-objet `order` (Phase 2-final). Commande du client : logistique,
+        Sous-objet `order`. Commande du client : logistique,
         montants, métadata commerciale. `amount` et `currency` requis.
         `delivery_address` optionnelle depuis 2026-08-22 : absente (ou
         réduite à un nom de ville), l'agent collecte l'adresse auprès du
         client pendant l'appel et la remonte dans `preferences` du compte
         rendu. `external_id` optionnel — génération fallback
         côté serveur si absent. **INSERT strict** : un 2e POST avec même
-        `(merchant_id, external_id)` retourne `409 order_external_id_already_exists`.
+        `(shop_id, external_id)` retourne `409 order_external_id_already_exists`.
 
         **Détail des articles** : deux formes au choix, l'une ou l'autre,
         ou les deux à la fois.
@@ -1631,11 +3320,23 @@ components:
         Les deux champs sont optionnels — une commande sans aucun des deux
         est valide.
       properties:
+        max_discount:
+          type: string
+          nullable: true
+          pattern: '^[0-9]+([.][0-9]+)?$'
+          examples: ["30.00"]
+          description: |
+            Remise maximale accordable sur CETTE commande, dans la devise de
+            la commande. Niveau le plus precis : fourni, il l'emporte sur
+            celui des produits et sur celui de la boutique. Absent, la valeur
+            est determinee cote serveur — la plus haute parmi les produits
+            de la commande qui en declarent une, sinon celle de la boutique.
+            Enregistre, pas encore exploite pendant l'appel.
         external_id:
           type: string
           nullable: true
           maxLength: 128
-          description: ID commande côté reseller, unique par merchant.
+          description: ID commande côté reseller, unique par boutique.
         delivery_address:
           type: string
           nullable: true
@@ -1699,7 +3400,7 @@ components:
       required: [purpose]
       additionalProperties: false
       description: |
-        Sous-objet `call_params` (Phase 2-final). Paramètres de l'appel :
+        Sous-objet `call_params`. Paramètres de l'appel :
         intention, tone, durée max, voix. `purpose` requis (enum interne).
       properties:
         purpose:
@@ -1715,28 +3416,44 @@ components:
           nullable: true
           minimum: 30
           maximum: 600
-        voice_id: { type: string, nullable: true, maxLength: 32 }
+          description: >-
+            Durée maximale souhaitée pour l'appel, en secondes.
+            **Déclaratif** : la valeur est enregistrée sur la fiche
+            boutique mais **aucun plafond n'est appliqué aujourd'hui** —
+            implémentation prévue. Documenté explicitement depuis le
+            2026-09-01 : le champ existait depuis des mois sans que son
+            absence d'effet soit dite.
+        voice_id:
+          type: string
+          nullable: true
+          maxLength: 32
+          description: >-
+            Identifiant de voix souhaité pour l'appel. **Déclaratif** : la
+            valeur est enregistrée mais la voix reste sélectionnée par le
+            pays de l'appel — implémentation prévue. Documenté
+            explicitement depuis le 2026-09-01, même raison que
+            `max_call_duration_seconds`.
     CallCreate:
       type: object
-      required: [customer, merchant_external_id, shop_info, order, country, call_params]
+      required: [customer, shop_external_id, order, call_params]
       additionalProperties: false
       description: |
-        Payload `POST /v1/calls` — Phase 2-final structure complète nested.
-        BREAKING vs précédentes versions : `merchant_ref` renommé
-        `merchant_external_id`, `amount`/`currency` déplacés dans `order`,
+        Payload `POST /v1/calls` — structure complète imbriquée.
+        BREAKING vs précédentes versions : `shop_ref` renommé
+        `shop_external_id`, `amount`/`currency` déplacés dans `order`,
         `purpose` déplacé dans `call_params`.
       properties:
         customer:
           $ref: "#/components/schemas/CustomerInput"
-        merchant_external_id:
+        shop_external_id:
           type: string
           minLength: 1
           maxLength: 128
           pattern: "^[a-zA-Z0-9_.-]+$"
           description: |
             Slug stable identifiant la boutique côté reseller. Utilisé pour
-            l'upsert merchant. Caractères autorisés : `[a-zA-Z0-9_.-]`.
-            Remplace `merchant_ref` des versions précédentes.
+            l'upsert boutique. Caractères autorisés : `[a-zA-Z0-9_.-]`.
+            Remplace `shop_ref` des versions précédentes.
           examples: ["boutique-paris-01"]
         shop_info:
           $ref: "#/components/schemas/ShopInfoInput"
@@ -1783,7 +3500,7 @@ components:
             sérialisé JSON compact.
     CallOut:
       type: object
-      required: [id, request_status, call_status, created_at, merchant_id, customer_phone_masked]
+      required: [id, request_status, call_status, created_at, shop_id, customer_phone_masked]
       additionalProperties: false
       properties:
         id: { type: string, format: uuid }
@@ -1823,10 +3540,10 @@ components:
             Terminaux échec : `failed`, `cancelled` (via POST
             `/v1/calls/{id}/cancel`).
         created_at: { type: string, format: date-time }
-        merchant_id:
+        shop_id:
           type: string
           format: uuid
-          description: ID du merchant upserté depuis `merchant_ref`.
+          description: ID du boutique upserté depuis `shop_ref`.
         customer_phone_masked:
           type: string
           description: |

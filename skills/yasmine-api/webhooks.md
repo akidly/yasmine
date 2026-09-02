@@ -561,7 +561,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "cancelled_at": "2026-04-20T14:00:16.123456Z",
   "cancelled_state": "connected",
   "billed_seconds": 25,
-  "merchant_id": "a5797a0a-...",
+  "shop_id": "a5797a0a-...",
   "country": "MA",
   "language": "fr"
 }

@@ -28,6 +28,71 @@ The `country` field on `create_call` selects the localized model variant. Use th
 
 **Strict E.164 only**. Examples : `+212612345678` (MA mobile), `+33612345678` (FR mobile). Validation rejects anything else with `validation_error` (422).
 
+## Shops — declare once, reference later
+
+`POST /v1/shops` registers a shop with **your** identifier. Minimum:
+`external_id`, `name`, `country` (`MA` | `DZ` | `TN` — no `FR`, we do not
+sell French shops).
+
+Declaring a shop here means you no longer resend its full `shop_info`
+profile on every call request.
+
+- `PATCH /v1/shops/{external_id}` — partial update. **Absent = unchanged,
+  `null` = cleared, `""` = 422.** This differs from `shop_info` on
+  `POST /v1/calls`, where nothing is ever cleared. Pick one door per shop.
+- `DELETE /v1/shops/{external_id}` — **archives**, does not delete. Call
+  history stays intact. Find it again with `?status=archived`.
+- `GET /v1/shops?merchant_external_id=M-4471` — all shops of one merchant.
+  `merchant_external_id` is a grouping key, not a resource: several shops
+  share it, and the merchant has no attributes of its own.
+
+`external_id` is immutable — it carries the shop's call history. Sending
+it in a `PATCH` returns 422.
+
+**Phone fields are validated against the shop country.** Local
+(`0522123456`) or international (`+212522123456`) both accepted, but the
+number must belong to the declared country. Stored and returned as E.164.
+
+Errors: `409 shop_external_id_already_exists` on a duplicate create (use
+`PATCH` to modify), `404 shop_not_found` — byte-identical whether the shop
+is missing, archived, or owned by another account.
+
+## Products — the same idea, one level down
+
+`POST /v1/shops/{shop_external_id}/products` adds a product to a shop's
+catalogue. Minimum: `external_id`, `name`. A product declared here can be
+ordered by reference alone — `POST /v1/calls` reads its name, description,
+price and variants from the catalogue instead of having them repeated.
+
+**Two levels, as in any commerce system**: the product carries identity,
+the variant carries the price. A product with no choices is no exception —
+omit `variants` and one nameless variant is created for it, holding
+`unit_price`. You never have to think about it: send a price, read a price
+back.
+
+- **Several variants ⇒ each needs its own `external_id`**, otherwise an
+  order cannot say which one. Rejected with 422 naming the offending
+  entries.
+- `PATCH` — same three-case semantics as shops. **But `variants` is
+  replace-whole-list**: a variant missing from the new list is deleted.
+  To change one, read the product, edit the entry, send the full list
+  back. Omitting `variants` entirely leaves them untouched.
+- `unit_price` alone is only valid on a single-variant product; on a
+  multi-variant one it is ambiguous and returns 422.
+- `DELETE` — archives. Past calls keep what they were told.
+
+**Ordering from the catalogue.** In `order.items`, send
+`product_external_id` (plus `variant_external_id` when the product has
+several). Anything you also send wins over the catalogue — a promotional
+price for that one order stays possible. An item with `name` and no
+reference is still valid: that is the door for a custom item, shipping
+fees or a gift, and an undeclared product must never block a call.
+
+Errors: `409 product_external_id_already_exists` (unique per shop only —
+the same id is free in another shop), `404 product_not_found`,
+`422 order_item_unknown_product`, `422 order_item_variant_required` whose
+`detail` lists the variants that do exist.
+
 ## Idempotency-Key
 
 `POST /v1/calls` requires the header `Idempotency-Key`. Use a fresh UUID v4 per logical request.
@@ -41,12 +106,12 @@ After a call ends, the `CallOut` and the `call.ended` webhook payload expose:
 - **`result`** : `confirmed` / `cancelled` / `requires_action` (3 lowercase values).
   - `confirmed` = the order is confirmed (bill normally). May include a `result_detail=modified` if the customer asked for a change.
   - `cancelled` = the customer cancelled, OR `result_detail=wrong_number|denied_order` (treated as cancellation server-side).
-  - `requires_action` = no automatic decision — the merchant must handle manually (callback, postponed date, unintelligible audio, no answer, etc.). Always check `result_detail` for the precise reason.
+  - `requires_action` = no automatic decision — the boutique must handle manually (callback, postponed date, unintelligible audio, no answer, etc.). Always check `result_detail` for the precise reason.
 - **`result_detail`** : free-text slug. Common values : `modified`, `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`. `null` when `result` is `confirmed` or `cancelled` without nuance.
 - **`customer_mood`** : `positive` / `neutral` / `negative` / `frustrated` / `unclear`, or `null`. `unclear` signals that the audio was globally unintelligible (typically paired with `result_detail=unclear`).
 - **`flags`** : array of qualitative tags (e.g. `confirmed_by_relative`, `address_incomplete`, `audio_quality_bad`).
 - **`preferences`** : array of customer demands (e.g. `["delivery Tuesday 2pm", "call before"]`).
-- **`next_action`** : suggested follow-up for the merchant, or `null`.
+- **`next_action`** : suggested follow-up for the boutique, or `null`.
 - **`summary`** : 1-3 sentence summary of the conversation. May contain customer PII (name, address) as evoked during the call.
 - **`recording_url`** : relative URL to download the call audio (mix of customer + agent). Path : `/v1/calls/{call_id}/recording`. Same Bearer auth as other `/v1` endpoints. `null` until the call ends, or after the 30-day retention window. Format : WAV mono 16 kHz 16-bit PCM (~32 KB/s, ~2 MB for 60s). Rate limit 60 req/min on this endpoint. Returns `410 Gone` with slug `recording_gone` when the audio has been purged.
 

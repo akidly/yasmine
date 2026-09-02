@@ -13,6 +13,354 @@ Remplacez `$YK` par votre clé et collez directement dans un terminal.
 
 ---
 
+## 0. Gérer ses boutiques — les déclarer une fois
+
+Sans cet endpoint, il faut renvoyer le profil complet de la boutique
+(`shop_info`) dans **chaque** demande d'appel. En la déclarant une fois,
+les appels suivants n'ont plus qu'à la référencer.
+
+### Créer une boutique
+
+Trois champs suffisent. Tout le reste s'ajoute ensuite.
+
+```bash
+curl -X POST https://api.yasmine.akidly.com/v1/shops \
+  -H "Authorization: Bearer $YASMINE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_id": "shop-4471",
+    "name": "GlowArt Casa",
+    "country": "MA"
+  }'
+```
+
+`external_id` est **votre** identifiant : celui de votre base, pas le
+nôtre. C'est aussi l'adresse de la boutique dans l'URL, d'où le jeu de
+caractères restreint (`[a-zA-Z0-9_.-]`).
+
+Il est **immuable** — il porte tout l'historique d'appels de la boutique.
+
+### Enrichir la fiche
+
+```bash
+curl -X PATCH https://api.yasmine.akidly.com/v1/shops/shop-4471 \
+  -H "Authorization: Bearer $YASMINE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "0522123456",
+    "whatsapp": "0661234567",
+    "email": "contact@glowart.ma",
+    "address": "12 Rue des Fleurs, Casablanca",
+    "customer_service_hours": "Lun-Sam 9h-18h",
+    "sector": "Cosmétique bio artisanale",
+    "has_physical_store": true,
+    "delivery_delay": "24-48h",
+    "payment_policy": "Paiement à la livraison ou carte bancaire",
+    "return_policy": "Retour accepté sous 14 jours",
+    "inspection_before_payment": true
+  }'
+```
+
+**Le téléphone accepte le format local.** `0522123456` sur une boutique
+marocaine est valide et vous est renvoyé normalisé en `+212522123456`.
+En revanche un numéro tunisien sur une boutique marocaine est refusé
+(422) : le numéro doit appartenir au pays déclaré.
+
+### Modifier, et effacer un champ
+
+Trois cas à distinguer dans le corps d'un `PATCH` :
+
+| Dans le corps | Effet |
+|---|---|
+| Champ **absent** | Inchangé |
+| Champ à **`null`** | **Effacé** |
+| Champ à **`""`** | Rejeté (422) |
+
+```bash
+curl -X PATCH https://api.yasmine.akidly.com/v1/shops/shop-4471 \
+  -H "Authorization: Bearer $YASMINE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "delivery_delay": "48-72h",
+    "current_promotions": null
+  }'
+```
+
+Ici le délai est modifié, la promotion effacée, et les vingt-sept autres
+champs restent tels quels.
+
+> ⚠️ Cette sémantique **diffère de `shop_info`** dans `POST /v1/calls`, où
+> un champ absent ou `null` n'efface jamais rien. C'est délibéré : une
+> demande d'appel est du passage, elle ne détruit rien ; un `PATCH` est un
+> geste explicite. **Si vous gérez vos boutiques par cet endpoint, cessez
+> d'envoyer `shop_info` dans vos demandes d'appel** — sinon les deux se
+> marchent dessus.
+
+### Regrouper des boutiques sous un même commerçant
+
+`merchant_external_id` porte l'identifiant du commerçant propriétaire.
+Plusieurs boutiques partagent la même valeur — c'est son objet.
+
+```bash
+# À la création ou par PATCH
+curl -X PATCH https://api.yasmine.akidly.com/v1/shops/shop-4471 \
+  -H "Authorization: Bearer $YASMINE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"merchant_external_id": "M-4471"}'
+
+# Puis : combien de boutiques possède ce commerçant ?
+curl "https://api.yasmine.akidly.com/v1/shops?merchant_external_id=M-4471" \
+  -H "Authorization: Bearer $YASMINE_API_KEY"
+```
+
+### Lister, paginer
+
+```bash
+curl "https://api.yasmine.akidly.com/v1/shops?limit=50" \
+  -H "Authorization: Bearer $YASMINE_API_KEY"
+```
+
+```json
+{
+  "data": [ { "external_id": "shop-4471", "name": "GlowArt Casa", "status": "active" } ],
+  "next_cursor": "eyJpZCI6...",
+  "has_more": true
+}
+```
+
+Passez `next_cursor` en `?cursor=` pour la page suivante. Le curseur est
+valable 24 h ; au-delà, refaites la première requête sans `cursor`.
+
+Par défaut seules les boutiques actives sont renvoyées. `?status=archived`
+ne montre que les archivées, `?status=all` ne filtre pas.
+
+### Archiver
+
+```bash
+curl -X DELETE https://api.yasmine.akidly.com/v1/shops/shop-4471 \
+  -H "Authorization: Bearer $YASMINE_API_KEY"
+# 204 No Content
+```
+
+**La boutique n'est pas supprimée.** Elle disparaît de la liste par défaut
+et n'accepte plus de modification, mais son historique d'appels reste
+intact et consultable. Pour la retrouver : `?status=archived`.
+
+### Les deux erreurs à gérer
+
+| Code | Slug | Quand |
+|---|---|---|
+| 409 | `shop_external_id_already_exists` | `POST` avec un `external_id` déjà pris. Utilisez `PATCH` pour modifier |
+| 404 | `shop_not_found` | Boutique inexistante, archivée, ou d'un autre compte — **corps identique dans les trois cas** |
+
+Le 404 est volontairement indifférencié : une réponse distincte
+permettrait de deviner quelles boutiques existent chez d'autres comptes.
+
+
+
+## 0.bis Le catalogue — déclarer un produit, puis le commander par son nom
+
+Même principe qu'une boutique, un niveau plus bas. Un produit déclaré ici
+se commande ensuite en le citant : son nom, son prix et ses déclinaisons
+n'ont plus à être répétés dans chaque demande d'appel.
+
+### Un produit sans déclinaison
+
+```bash
+curl -X POST "$BASE/v1/shops/shop-4471/products" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_id": "SERUM-VITC",
+    "name": "Sérum vitamine C",
+    "description": "Flacon 30 ml, concentration 15%",
+    "unit_price": "320.00"
+  }'
+```
+
+Vous envoyez un prix, vous relisez un prix. En interne le produit reçoit
+une déclinaison unique qui le porte — vous n'avez pas à le savoir, mais
+c'est pour cela que `variants` contient une entrée dans la réponse, avec
+un `external_id` à `null` : vous ne l'avez pas nommée, et vous n'avez pas
+à le faire.
+
+### Un produit à plusieurs déclinaisons
+
+Le prix vit sur la déclinaison : le XL peut coûter plus cher que le S.
+
+```bash
+curl -X POST "$BASE/v1/shops/shop-4471/products" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_id": "TSHIRT-BLANC",
+    "name": "T-shirt blanc en coton",
+    "description": "Coton bio 180g, coupe droite",
+    "variants": [
+      { "external_id": "TSH-S",  "options": {"Taille": "S"},  "unit_price": "149.00" },
+      { "external_id": "TSH-M",  "options": {"Taille": "M"},  "unit_price": "149.00" },
+      { "external_id": "TSH-XL", "options": {"Taille": "XL"}, "unit_price": "169.00",
+        "compare_at_price": "199.00" }
+    ]
+  }'
+```
+
+**Dès qu'il y a plusieurs déclinaisons, chacune doit porter son
+`external_id`** — sans quoi une commande ne pourrait pas désigner
+laquelle. Le refus est un 422 qui nomme les entrées fautives.
+
+`compare_at_price` est le prix barré, celui qui permet de dire « c'était
+199, vous l'avez à 169 ». Il doit être **strictement supérieur** au prix :
+l'inverse serait forcément une erreur de saisie.
+
+Trois axes d'options au maximum (`{"Taille": "XL", "Couleur": "rouge"}`).
+
+### Ce qui prime sur la boutique
+
+Trois champs du produit l'emportent sur ceux de la boutique, quand ils
+sont renseignés :
+
+```bash
+curl -X PATCH "$BASE/v1/shops/shop-4471/products/SERUM-VITC" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "max_discount": "20.00",
+    "return_policy": "Produit d’hygiène : aucun retour une fois ouvert",
+    "current_promotions": "Deuxième flacon à -50%",
+    "faq_free": "Ne pas utiliser sur peau lésée. Conserver à l’abri de la lumière."
+  }'
+```
+
+| Champ | Règle |
+|---|---|
+| `return_policy` | **Remplace** celle de la boutique pour ce produit |
+| `current_promotions` | **S'ajoute** à celle de la boutique — les deux sont vraies |
+| `max_discount` | Sur une commande à plusieurs produits, c'est **la plus haute** qui vaut. Une valeur à `0` ne bloque rien : elle dit seulement que ce produit-là n'apporte pas de marge |
+| `faq_free` | Sert à répondre aux questions, n'est jamais récité d'office |
+
+### Modifier les déclinaisons
+
+⚠️ **`variants` remplace la liste entière.** Une déclinaison absente de la
+nouvelle liste est supprimée du catalogue.
+
+```bash
+# Retirer la taille S : on renvoie la liste sans elle.
+curl -X PATCH "$BASE/v1/shops/shop-4471/products/TSHIRT-BLANC" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "variants": [
+      { "external_id": "TSH-M",  "options": {"Taille": "M"},  "unit_price": "149.00" },
+      { "external_id": "TSH-XL", "options": {"Taille": "XL"}, "unit_price": "169.00" }
+    ]
+  }'
+```
+
+Pour n'en changer qu'une : relisez le produit, modifiez l'entrée, renvoyez
+la liste complète. **Ne pas envoyer `variants` du tout les laisse
+intactes** — renommer un produit n'efface pas ses déclinaisons.
+
+Les commandes déjà passées ne bougent pas : elles ont retenu ce qui a été
+dit au client au moment de l'appel.
+
+### Lister et archiver
+
+```bash
+curl "$BASE/v1/shops/shop-4471/products?limit=50" \
+  -H "Authorization: Bearer $YK"
+
+curl -X DELETE "$BASE/v1/shops/shop-4471/products/TSHIRT-BLANC" \
+  -H "Authorization: Bearer $YK"
+# 204 No Content
+```
+
+Comme pour les boutiques, `DELETE` **archive**. Le produit disparaît du
+catalogue par défaut et ne peut plus être commandé ; les appels qui l'ont
+mentionné restent intacts. Pour le retrouver : `?status=archived`.
+
+### Les erreurs à gérer
+
+| Code | Slug | Quand |
+|---|---|---|
+| 409 | `product_external_id_already_exists` | `external_id` déjà pris **dans cette boutique**. Le même identifiant reste libre dans une autre |
+| 404 | `product_not_found` | Produit inexistant, archivé, ou d'une autre boutique — corps identique |
+| 404 | `shop_not_found` | La boutique du chemin n'existe pas |
+| 422 | `validation_error` | `external_id` de déclinaison manquant ou en double, prix barré inférieur au prix, plus de trois axes d'options, `unit_price` sur un produit à plusieurs déclinaisons |
+
+
+## 0.ter Commander depuis le catalogue — la demande d'appel allégée
+
+Une fois la boutique et les produits déclarés, une demande d'appel se
+réduit à qui appeler, quoi référencer, et combien.
+
+```bash
+curl -X POST "$BASE/v1/calls" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "customer": {
+      "name": "Ahmed Bennani",
+      "phone_number": "+212612345678"
+    },
+    "shop_external_id": "shop-4471",
+    "order": {
+      "external_id": "CMD-2026-8891",
+      "amount": "487.00",
+      "items": [
+        { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 },
+        { "product_external_id": "SERUM-VITC", "quantity": 1 }
+      ]
+    }
+  }'
+```
+
+Ce qui est **déduit** et n'a plus à être transmis :
+
+| Ce qui n'est plus envoyé | D'où cela vient |
+|---|---|
+| `shop_info` | La fiche déclarée par `POST /v1/shops` |
+| `country` | **L'indicatif du numéro du client**, jamais le pays de la boutique — une boutique vend à plusieurs pays, et se tromper de pays c'est se tromper de dialecte |
+| `currency` | Le pays de la boutique (`MA` → MAD, `DZ` → DZD, `TN` → TND) |
+| `name`, `description`, `unit_price` de chaque ligne | La fiche produit et la déclinaison référencées |
+| `max_discount` | Le plus haut parmi les produits commandés, sinon celui de la boutique |
+
+Deux nuances valent d'être connues. Le pays se lit sur le numéro appelé :
+`+212…` est marocain, et cela reste vrai même si la boutique est
+tunisienne. Envoyez `country` explicitement pour un Marocain expatrié
+joignable sur un `+33` que vous voulez faire appeler en darija — une valeur
+fournie gagne toujours. La devise, elle, suit le pays de la boutique, parce
+qu'un montant est ce que le commerçant encaisse.
+
+`variant_external_id` est inutile sur un produit qui n'a qu'une
+déclinaison — elle est retenue automatiquement. S'il en a plusieurs et
+qu'aucune n'est désignée, la requête est refusée
+(`order_item_variant_required`) en listant celles qui existent. Aucune
+n'est choisie au hasard : l'appel annoncerait au client un article qu'il
+n'a pas commandé.
+
+**Ce que vous envoyez malgré tout l'emporte.** Un prix promotionnel valable
+pour cette commande-là se transmet sur la ligne, et il prime sur le
+catalogue :
+
+```json
+{ "product_external_id": "SERUM-VITC", "quantity": 2, "unit_price": "280.00" }
+```
+
+**Mélanger les deux formes est permis.** Une ligne sans référence, décrite
+sur place avec `name`, reste valide — c'est la voie pour un article sur
+mesure, des frais de port ou un cadeau :
+
+```json
+"items": [
+  { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 },
+  { "name": "Frais de livraison", "quantity": 1, "unit_price": "30.00" }
+]
+```
+
+Un produit absent du catalogue ne doit jamais bloquer un appel.
+
 ## 1. Appel simple Maroc — commande à article unique (texte libre)
 
 La majorité des commandes contiennent un seul article. Le moyen le plus simple de transmettre le détail est un résumé libre via `order.items_text` (max 500 caractères). Yasmine cite ce résumé tel quel auprès du client.
@@ -27,7 +375,7 @@ curl -X POST "$BASE/v1/calls" \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_external_id": "boutique-casa-01",
+    "shop_external_id": "boutique-casa-01",
     "shop_info": {
       "name": "GlowArt Casa"
     },
@@ -51,7 +399,7 @@ Réponse (HTTP **201**) :
   "id": "dcaebcdd-a81a-4386-a0df-85d9aaafe862",
   "status": "queued",
   "created_at": "2026-04-19T18:36:09.496546Z",
-  "merchant_id": "2671d5d2-efff-4e14-ba2a-3bfe80bd7840",
+  "shop_id": "2671d5d2-efff-4e14-ba2a-3bfe80bd7840",
   "customer_phone_masked": "+212 6** *** *78",
   "purpose": "confirmation",
   "amount": "249.00",
@@ -83,7 +431,7 @@ curl -X POST "$BASE/v1/calls" \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_external_id": "boutique-casa-01",
+    "shop_external_id": "boutique-casa-01",
     "shop_info": {
       "name": "GlowArt Casa"
     },
@@ -132,10 +480,10 @@ curl -X POST "$BASE/v1/calls" \
       "email": "claire@example.com",
       "notes": "VIP, horaires bureau uniquement"
     },
-    "merchant_external_id": "boutique-paris-01",
+    "shop_external_id": "boutique-paris-01",
     "shop_info": {
       "name": "GlowArt Paris",
-      "shop_sector": "beauté",
+      "sector": "beauté",
       "return_policy": "retour gratuit sous 14 jours"
     },
     "order": {
@@ -154,7 +502,7 @@ curl -X POST "$BASE/v1/calls" \
   }'
 ```
 
-La `country` bascule automatiquement le serveur vers le profil conversationnel français. Les champs facultatifs sont persistés côté serveur et réutilisés lors des appels suivants pour le même `(customer, merchant)` (COALESCE stickiness — un POST ultérieur sans ces champs n'écrase pas les valeurs existantes côté customer + merchant).
+La `country` bascule automatiquement le serveur vers le profil conversationnel français. Les champs facultatifs sont persistés côté serveur et réutilisés lors des appels suivants pour le même `(customer, boutique)` (COALESCE stickiness — un POST ultérieur sans ces champs n'écrase pas les valeurs existantes côté customer + boutique).
 
 ---
 
@@ -172,7 +520,7 @@ curl -X POST "$BASE/v1/calls" \
       "name": "Sophie El Idrissi",
       "phone_number": "+212661111222"
     },
-    "merchant_external_id": "boutique-casa-01",
+    "shop_external_id": "boutique-casa-01",
     "shop_info": {"name": "GlowArt Casa"},
     "order": {
       "delivery_address": "12 Rue X, Casablanca",
@@ -203,7 +551,7 @@ curl -X POST "$BASE/v1/calls" \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_external_id": "boutique-casa-01",
+    "shop_external_id": "boutique-casa-01",
     "shop_info": {"name": "GlowArt Casa"},
     "order": {
       "external_id": "CMD-2026-00789",
@@ -365,9 +713,9 @@ curl -H "Authorization: Bearer $YK" "$BASE/v1/calls?limit=10&cursor=eyJkaXIi..."
 **Filtres combinables** :
 
 ```bash
-# Appels du merchant `boutique-casa-01` terminés dans la dernière semaine.
+# Appels du boutique `boutique-casa-01` terminés dans la dernière semaine.
 curl -H "Authorization: Bearer $YK" \
-  "$BASE/v1/calls?status=ended&merchant_id=8f3a...&since=2026-04-14T00:00:00Z&limit=100"
+  "$BASE/v1/calls?status=ended&shop_id=8f3a...&since=2026-04-14T00:00:00Z&limit=100"
 ```
 
 **Rotation du curseur** : le curseur est signé HMAC-SHA256 avec une clé serveur. Si l'équipe Yasmine rotate cette clé, tous les curseurs émis avant deviennent invalides (`400 invalid_cursor`) — refaire la 1re requête sans `cursor`. Même comportement après 24 h (`400 cursor_expired`).
@@ -408,7 +756,7 @@ curl -H "Authorization: Bearer $YK" \
 
 # Filtrer la liste : commandes confirmées d'une boutique
 curl -H "Authorization: Bearer $YK" \
-  "$BASE/v1/calls?status=ended&result=confirmed&merchant_id=$MID&limit=50"
+  "$BASE/v1/calls?status=ended&result=confirmed&shop_id=$MID&limit=50"
 
 # Consulter le solde courant
 curl -H "Authorization: Bearer $YK" "$BASE/v1/me/balance"
@@ -434,7 +782,7 @@ curl -X POST "$BASE/v1/calls" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $IDEMP" \
-  -d '{ "customer": { "name": "X", "phone_number": "+212612345678" }, "merchant_external_id": "x", "shop_info": {"name": "X Shop"}, "order": {"delivery_address": "Rue X, Casa", "amount": "100", "currency": "MAD"}, "country": "MA", "call_params": {"purpose": "confirmation"} }'
+  -d '{ "customer": { "name": "X", "phone_number": "+212612345678" }, "shop_external_id": "x", "shop_info": {"name": "X Shop"}, "order": {"delivery_address": "Rue X, Casa", "amount": "100", "currency": "MAD"}, "country": "MA", "call_params": {"purpose": "confirmation"} }'
 
 # Si timeout / erreur réseau, retry avec LA MÊME clé + LE MÊME body
 curl -X POST "$BASE/v1/calls" \
@@ -468,7 +816,7 @@ curl -X POST "$BASE/v1/calls" \
       "name": "",
       "phone_number": "+0000000000"
     },
-    "merchant_external_id": "ma boutique",
+    "shop_external_id": "ma boutique",
     "shop_info": {"name": ""},
     "order": {"delivery_address": "", "amount": "-10", "currency": "mad"},
     "country": "XX",
@@ -489,7 +837,7 @@ Réponse (HTTP **422**) :
   "errors": [
     { "loc": ["body", "customer", "phone_number"], "msg": "Value error, phone_number invalide — format attendu E.164 (ex: +212612345678)", "type": "value_error" },
     { "loc": ["body", "customer", "name"], "msg": "String should have at least 1 character", "type": "string_too_short" },
-    { "loc": ["body", "merchant_external_id"], "msg": "String should match pattern '^[a-zA-Z0-9_.-]+$'", "type": "string_pattern_mismatch" },
+    { "loc": ["body", "shop_external_id"], "msg": "String should match pattern '^[a-zA-Z0-9_.-]+$'", "type": "string_pattern_mismatch" },
     { "loc": ["body", "shop_info", "name"], "msg": "String should have at least 1 character", "type": "string_too_short" },
     { "loc": ["body", "order", "delivery_address"], "msg": "String should have at least 1 character", "type": "string_too_short" },
     { "loc": ["body", "order", "amount"], "msg": "Decimal input should be greater than 0", "type": "greater_than" },

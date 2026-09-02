@@ -58,7 +58,7 @@ curl -X POST https://api.yasmine.akidly.com/v1/calls \
       "name": "Ahmed Bennani",
       "phone_number": "+212612345678"
     },
-    "merchant_external_id": "ma-boutique-test",
+    "shop_external_id": "ma-boutique-test",
     "shop_info": {
       "name": "Ma Boutique Test"
     },
@@ -90,7 +90,7 @@ Réponse attendue (HTTP **201 Created**) :
   "id": "dcaebcdd-a81a-4386-a0df-85d9aaafe862",
   "status": "queued",
   "created_at": "2026-04-19T18:36:09.496546Z",
-  "merchant_id": "2671d5d2-efff-4e14-ba2a-3bfe80bd7840",
+  "shop_id": "2671d5d2-efff-4e14-ba2a-3bfe80bd7840",
   "customer_phone_masked": "+212 6** *** *53",
   "purpose": "confirmation",
   "amount": "249.00",
@@ -108,7 +108,7 @@ Header `Location: /v1/calls/dcaebcdd-a81a-4386-a0df-85d9aaafe862` en prime.
 
 - **`id`** : identifiant UUID de l'appel. À conserver pour le retrouver plus tard.
 - **`status`** : `queued` au moment du 201. L'appel est asynchrone — l'agent va composer, sonner, converser, puis raccrocher (typiquement ~60 secondes). Les statuts traversés : `queued → dialing → ringing → in_progress → ended` (ou `failed`).
-- **`merchant_id`** : le merchant a été upserté depuis `merchant_external_id`. Si cet identifiant existait déjà pour votre reseller, c'est le même ID — sinon un nouveau merchant a été créé.
+- **`shop_id`** : notre identifiant de la boutique, retrouvée depuis votre `shop_external_id`. Si cet identifiant existait déjà sur votre compte, c'est le même ID — sinon une nouvelle boutique a été créée. Pour la déclarer explicitement, avec sa fiche complète : `POST /v1/shops`.
 - **`customer_phone_masked`** : **jamais le numéro brut** dans nos réponses (principe anti-BOPLA). Le numéro complet reste disponible côté opérations pour debug.
 - **`amount`** est une **string** pour préserver la précision décimale (évite les pièges de `Number` en JavaScript).
 
@@ -365,9 +365,41 @@ const res = await fetch("https://api.yasmine.akidly.com/v1/me/balance", {
 const remaining = res.headers.get("X-RateLimit-Remaining");
 ```
 
+## 4.10. Alléger vos demandes d'appel — boutiques et catalogue
+
+L'exemple ci-dessus transmet tout à chaque appel. Ce n'est pas obligatoire.
+
+Déclarez la boutique **une fois** (`POST /v1/shops`) et ses produits une
+fois (`POST /v1/shops/{shop_external_id}/products`) : une demande d'appel se
+réduit alors à qui appeler, quoi référencer, et combien.
+
+```json
+{
+  "customer": { "name": "Ahmed Bennani", "phone_number": "+212612345678" },
+  "shop_external_id": "shop-4471",
+  "order": {
+    "external_id": "CMD-2026-8891",
+    "amount": "487.00",
+    "items": [
+      { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 }
+    ]
+  }
+}
+```
+
+Le profil de la boutique, la devise, le nom et le prix de chaque article
+sont relus depuis ce que vous avez déclaré. **Ce que vous envoyez malgré
+tout l'emporte** : un prix promotionnel pour une commande donnée reste
+possible, et une ligne décrite sur place avec `name` reste valide — c'est
+la voie pour un article sur mesure ou des frais de port.
+
+Recettes complètes : `docs/examples.md` §0, §0.bis et §0.ter.
+
+---
+
 ## 5. Prochaines étapes
 
-- [`docs/examples.md`](https://docs.yasmine.akidly.com/examples.md) — recettes pratiques : appel France, metadata reseller, gestion fine des erreurs.
+- [`docs/examples.md`](https://docs.yasmine.akidly.com/examples.md) — recettes pratiques : boutiques, catalogue produits, appel France, metadata reseller, gestion fine des erreurs.
 - [`docs/webhooks.md`](https://docs.yasmine.akidly.com/webhooks.md) — catalogue des events sortants (planned M4+ — spec cible à lire pour préparer votre intégration).
 - [`docs/errors.md`](https://docs.yasmine.akidly.com/errors.md) — table complète des erreurs.
 - [`docs/versioning.md`](https://docs.yasmine.akidly.com/versioning.md) — politique de versioning de l'API.

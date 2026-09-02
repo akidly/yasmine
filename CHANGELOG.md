@@ -8,6 +8,202 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ## [Unreleased]
 
+### Added
+
+- **Nouvelle ressource catalogue `/v1/shops/{shop_external_id}/products` —
+  déclarez vos produits, puis commandez-les par référence.** Cinq routes,
+  calquées sur celles des boutiques : `POST`, `GET` (paginé), `GET /{id}`,
+  `PATCH`, `DELETE` (archive). Le minimum tient en deux champs :
+  `external_id` et `name`.
+
+  **Deux niveaux, comme dans tout système de commerce** : le produit porte
+  l'identité, la déclinaison porte le prix. Un produit sans choix n'y
+  échappe pas — si vous n'envoyez pas de `variants`, une déclinaison unique
+  est créée pour lui et `unit_price` s'y dépose. Vous envoyez un prix, vous
+  relisez un prix ; le reste ne vous concerne pas.
+
+  Points de contrat à connaître avant d'intégrer :
+
+  - **Plusieurs déclinaisons ⇒ chacune porte son `external_id`.** Sans cela
+    une commande ne pourrait pas désigner laquelle. Refus en `422` nommant
+    les entrées fautives.
+  - **`PATCH` sur `variants` remplace la liste entière.** Une déclinaison
+    absente de la nouvelle liste est supprimée du catalogue. Pour n'en
+    changer qu'une : relire, modifier, renvoyer la liste complète. Ne pas
+    envoyer `variants` du tout les laisse intactes.
+  - **`unit_price` seul est refusé sur un produit à plusieurs
+    déclinaisons** (`422`) : il y serait ambigu.
+  - **`compare_at_price` doit être strictement supérieur à `unit_price`** —
+    un prix barré inférieur au prix est forcément une erreur de saisie.
+  - **`external_id` est unique par boutique, pas par compte.** Le même
+    identifiant reste libre dans une autre boutique.
+  - **`DELETE` archive.** Les appels qui ont mentionné le produit gardent ce
+    qui a été dit au client.
+
+  Trois champs du produit priment sur ceux de la boutique quand ils sont
+  renseignés : `return_policy` **remplace** celle de la boutique,
+  `current_promotions` **s'ajoute** à la sienne, et `max_discount` obéit à
+  une règle explicite décrite plus bas.
+
+  Deux nouveaux slugs : `product_not_found` (404) et
+  `product_external_id_already_exists` (409). Le 404 est **identique** que
+  le produit soit inexistant, archivé, ou dans une autre boutique.
+
+- **La demande d'appel s'allège : `order.items` accepte des références de
+  catalogue.** Deux nouveaux champs par ligne de commande,
+  `product_external_id` et `variant_external_id`. Une ligne qui référence
+  un produit déclaré n'a plus à répéter son nom, sa description, son prix
+  ni ses déclinaisons disponibles : tout est relu depuis le catalogue.
+
+  Ce qui devient déductible et n'a plus à être transmis :
+
+  | Champ | D'où il vient désormais |
+  |---|---|
+  | `shop_info` | La fiche déclarée par `POST /v1/shops` |
+  | `country` | L'indicatif du numéro **du client** |
+  | `order.currency` | Le pays de la boutique (`MA` → MAD, `DZ` → DZD, `TN` → TND) |
+  | `name`, `description`, `unit_price`, `available_variants` d'une ligne | La fiche produit et la déclinaison référencées |
+
+  **Ce que vous envoyez malgré tout l'emporte** — un prix promotionnel pour
+  cette commande-là reste possible. **Une ligne décrite sur place avec
+  `name` reste valide** : c'est la voie pour un article sur mesure, des
+  frais de port ou un cadeau. Un produit absent du catalogue ne doit jamais
+  bloquer un appel.
+
+  `variant_external_id` est inutile sur un produit à déclinaison unique.
+  S'il en a plusieurs et qu'aucune n'est désignée, la requête est refusée
+  (`order_item_variant_required`) **en listant celles qui existent** :
+  aucune n'est choisie au hasard, sans quoi l'appel annoncerait au client un
+  article qu'il n'a pas commandé.
+
+  Deux nouveaux slugs : `order_item_unknown_product` (422) et
+  `order_item_variant_required` (422).
+
+- **`order.max_discount` — la remise maximale accordable sur une commande.**
+  Trois niveaux, du plus précis au plus général : la commande l'emporte sur
+  les produits, qui l'emportent sur la boutique. Sur une commande à
+  plusieurs produits, c'est **la plus haute** des remises déclarées qui
+  vaut, jamais leur somme ; et une valeur à `0` ne bloque rien — elle dit
+  seulement que ce produit-là n'apporte pas de marge, un autre article de
+  la même commande pouvant la couvrir.
+
+  Champ **enregistré, pas encore exploité pendant l'appel**. Il est
+  documenté dès maintenant pour que vos intégrations puissent le remplir.
+
+- **Nouvelle ressource `/v1/shops` — gérez vos boutiques explicitement.**
+  Cinq routes : `POST` (créer), `GET` (lister, paginé), `GET /{external_id}`
+  (consulter), `PATCH` (modifier), `DELETE` (archiver). Une boutique se
+  déclare **une fois**, avec votre propre identifiant, au lieu d'être
+  retransmise dans le `shop_info` de chaque demande d'appel.
+
+  Le minimum tient en trois champs : `external_id`, `name`, `country`. Les
+  vingt-six autres s'ajoutent quand vous voulez, par `PATCH`.
+
+  Points de contrat à connaître avant d'intégrer :
+
+  - **`PATCH` efface sur `null`.** Champ absent = inchangé, champ à `null` =
+    effacé, chaîne vide = `422`. Cette sémantique **diffère de `shop_info`**
+    dans `POST /v1/calls`, où rien n'est jamais effacé. Si vous gérez vos
+    boutiques par cet endpoint, cessez d'envoyer `shop_info` dans vos
+    demandes d'appel — sinon les deux se contredisent.
+  - **`DELETE` archive, ne supprime pas.** L'historique d'appels reste
+    intact et consultable via `?status=archived`.
+  - **`external_id` est immuable** — il porte l'historique de la boutique.
+    L'envoyer dans un `PATCH` retourne `422`.
+  - **`phone` et `whatsapp` sont validés contre le `country` déclaré.**
+    Format local (`0522123456`) ou international, au choix ; mais un numéro
+    d'un autre pays est refusé. Stockés et renvoyés en E.164.
+  - Pas d'`Idempotency-Key` requise, contrairement à `POST /v1/calls` :
+    l'unicité de l'`external_id` rend déjà la création rejouable.
+
+  Deux nouveaux slugs d'erreur : `shop_not_found` (404) et
+  `shop_external_id_already_exists` (409). Le 404 est **identique** que la
+  boutique soit inexistante, archivée, ou détenue par un autre compte —
+  une réponse différenciée permettrait de deviner ce qui existe ailleurs.
+
+- **`merchant_external_id` — regrouper des boutiques sous un commerçant.**
+  Champ optionnel sur la boutique, et filtre sur `GET /v1/shops`. Plusieurs
+  boutiques partagent la même valeur : c'est ainsi que l'on sait combien de
+  boutiques possède un commerçant. C'est une clé de regroupement, pas une
+  ressource — le commerçant n'a pas d'attributs propres.
+
+- **`has_physical_store`** — la boutique a-t-elle un point de vente où le
+  client peut se présenter ? `true`, `false`, ou absent si non déclaré.
+  Distinct de `address`, qui dit *où* vous êtes sans dire si l'on *peut
+  venir*.
+
+- **`inspection_before_payment`** — le client peut-il ouvrir le colis avant
+  de payer ? Trois états, l'absence signifiant « non déclaré ».
+
+- **`max_discount`, `delivery_companies`, `city_coverage`, `agent_name`** —
+  enregistrés sur la fiche boutique, **pas encore exploités pendant
+  l'appel**. Vous pouvez les renseigner dès maintenant pour préparer votre
+  intégration ; leur activation suivra.
+
+### Changed (BREAKING)
+
+- **`shop_info` : cinq champs renommés, un retiré.** Le préfixe `shop_`
+  était redondant dans un objet déjà nommé `shop_info`, et la distinction
+  service après-vente / ligne principale n'avait pas de réalité pour la
+  plupart des boutiques.
+
+  | Avant | Après |
+  |---|---|
+  | `shop_phone_sav` | `phone` |
+  | `shop_whatsapp_sav` | `whatsapp` |
+  | `shop_email_sav` | `email` |
+  | `shop_address` | `address` |
+  | `shop_sector` | `sector` |
+  | `shop_sav_hours` | `customer_service_hours` |
+  | `size_exchange_policy` | `exchange_policy` |
+
+  `exchange_policy` élargit aussi le sens : un échange couvre la couleur,
+  le modèle et l'article défectueux, pas seulement la taille.
+
+  Les anciens noms retournent `422 extra_forbidden`.
+
+- **`merchant_external_id` à la racine de `POST /v1/calls` devient
+  `shop_external_id`.** Il désignait une boutique, il porte désormais le nom
+  qui convient. ⚠️ Le nom `merchant_external_id` **existe toujours**, mais
+  dans `shop_info`, et il y désigne le **commerçant propriétaire** — pas la
+  boutique. L'ancien usage à la racine retourne `422`.
+
+- **`loyalty_program` retiré de `shop_info`.** Champ quasi inutilisé en
+  appel de confirmation. L'envoyer retourne `422` ; l'information a sa place
+  dans `faq_free`.
+
+- **`merchant_id` devient `shop_id`** dans le filtre de `GET /v1/calls` et
+  dans les réponses.
+
+- **`country` sur les appels reflète désormais le client appelé.** Il était
+  renseigné avec le pays du **premier** client jamais appelé par la boutique
+  et ne changeait plus ensuite : une boutique appelant un Marocain puis un
+  Français annonçait `MA` sur les deux. Les webhooks `call.ended` et
+  `GET /v1/calls` renvoient maintenant le vrai pays de chaque appel. Les
+  appels antérieurs conservent leur ancienne valeur.
+
+### Changed
+
+- **`order.currency` et `country` deviennent facultatifs sur
+  `POST /v1/calls`**, de même que `name` sur une ligne de commande qui
+  porte une référence de catalogue. Les requêtes existantes, qui envoient
+  ces champs, continuent de fonctionner à l'identique : une valeur fournie
+  prime toujours sur ce qui serait déduit. Aucune action requise.
+
+### Deprecated
+
+- **`industry`, `active`, `logo_url` dans `shop_info`.** Toujours acceptés et
+  enregistrés, mais absents de `/v1/shops` et sans effet pendant l'appel.
+  `industry` fait doublon avec `sector` ; `active` est remplacé par
+  l'archivage. Retrait après préavis `Sunset` — ne construisez pas dessus.
+
+- **`call_params.voice_id` et `call_params.max_call_duration_seconds`** sont
+  désormais documentés pour ce qu'ils sont : **enregistrés, sans effet
+  aujourd'hui**. Ils étaient acceptés depuis des mois sans que leur inertie
+  soit écrite nulle part. Leur comportement n'a pas changé — seulement sa
+  description.
+
+
 ### Changed (BREAKING)
 
 - **`order.items[].variant` remplacé par `variants` structurés + `description`.**
@@ -42,8 +238,8 @@ politique de versioning décrite dans `docs/versioning.md`.
   où le polling `GET /v1/calls/{call_id}`, présenté comme fallback aux webhooks
   perdus, ne renvoyait pas le résultat métier de l'appel.
 
-- **Payload `POST /v1/calls` restructuré en sous-objets.** `merchant_ref` à la
-  racine devient `merchant_external_id` ; `amount` / `currency` passent sous
+- **Payload `POST /v1/calls` restructuré en sous-objets.** `shop_ref` à la
+  racine devient `shop_external_id` ; `amount` / `currency` passent sous
   `order` ; `purpose` passe sous `call_params`. Nouveaux sous-blocs
   `shop_info`, `order` et `call_params`. Un payload plat legacy renvoie `422`
   avec des rejets `extra_forbidden` sur les anciens champs et `missing` sur les
@@ -234,7 +430,7 @@ politique de versioning décrite dans `docs/versioning.md`.
   `{data, next_cursor, has_more}`, 50 par défaut, 200 maximum. Curseur opaque
   signé, valable 24 h, en avant uniquement — à repasser tel quel en `?cursor=`,
   sans tenter de le parser. Quatre filtres combinables : `?status=`
-  (`queued` / `dialing` / `in_progress` / `ended` / `failed`), `?merchant_id=`,
+  (`queued` / `dialing` / `in_progress` / `ended` / `failed`), `?shop_id=`,
   `?since=`, `?until=`. Erreurs : `400 invalid_cursor` (format ou signature
   invalide) et `400 cursor_expired` (> 24 h) — refaites la première requête
   sans curseur.
@@ -277,7 +473,7 @@ politique de versioning décrite dans `docs/versioning.md`.
   - `404 call_not_found` si l'appel appartient à un autre compte.
   - Émet l'événement `call.cancelled` (distinct de `call.ended`, qui signale
     une fin naturelle), avec `{call_id, cancelled_at, cancelled_state,
-    billed_seconds, merchant_id}`.
+    billed_seconds, shop_id}`.
 
 - **Webhooks sortants signés.**
   - Configuration self-service : `POST` / `GET` / `DELETE /v1/me/webhooks`.
@@ -345,8 +541,8 @@ politique de versioning décrite dans `docs/versioning.md`.
 ### Removed
 
 - **5 opérations non implémentées retirées de la spec OpenAPI**
-  (`/v1/calls/{id}/events`, `/v1/calls/{id}/transcript`, `/v1/merchants` GET et
-  POST, `/v1/merchants/{id}` PATCH) : leur présence poussait les SDK clients à
+  (`/v1/calls/{id}/events`, `/v1/calls/{id}/transcript`, `/v1/shops` GET et
+  POST, `/v1/shops/{id}` PATCH) : leur présence poussait les SDK clients à
   les générer pour rien. Elles réapparaîtront lorsqu'elles seront livrées.
   Les schémas associés (`CallEventList`, `Transcript`, `Merchant*`) sont
   supprimés en conséquence.
@@ -375,7 +571,7 @@ politique de versioning décrite dans `docs/versioning.md`.
   (défaut `MA`). Le profil conversationnel correspondant est choisi côté
   serveur — transparent pour l'intégrateur.
 - `phone_number` validé puis renormalisé en E.164 canonique.
-- `merchant_ref` : `^[a-zA-Z0-9_.-]+$`, 128 caractères maximum.
+- `shop_ref` : `^[a-zA-Z0-9_.-]+$`, 128 caractères maximum.
 - `customer_name` : 200 caractères maximum, espaces retirés aux extrémités,
   caractères de contrôle rejetés, normalisation Unicode NFC.
 - `metadata` : 2 Ko maximum une fois sérialisé en JSON.
