@@ -2103,6 +2103,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: Remise maximale que l'agent pourra accorder. Interpretee dans la devise
             du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND).
           nullable: true
@@ -2322,6 +2323,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: Remise maximale que l'agent pourra accorder. Interpretee dans la devise
             du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND).
           nullable: true
@@ -2447,6 +2449,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           nullable: true
         delivery_companies:
           items:
@@ -2551,6 +2554,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: Prix de CETTE variante, dans la devise du pays de la boutique. C'est ici
             que vit le prix — le XL peut couter plus cher que le S.
           nullable: true
@@ -2562,6 +2566,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: 'Prix barre, pour valoriser une remise : « c''etait 300, vous l''avez a
             250 ». **Doit etre superieur a `unit_price`** — l''inverse serait forcement une erreur
             de saisie.'
@@ -2617,6 +2622,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: 'Remise maximale sur ce produit. Absent : celle de la boutique s''applique.
             Sur une commande a plusieurs produits, c''est **la plus haute** qui vaut — et une
             valeur a `0` ne bloque rien, elle signifie seulement que ce produit n''apporte pas
@@ -2644,6 +2650,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: '**Raccourci pour un produit sans choix.** Le prix est pose sur la variante
             unique, creee automatiquement. En lecture, ce champ renvoie ce prix — mais seulement
             si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.'
@@ -2726,6 +2733,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: 'Remise maximale sur ce produit. Absent : celle de la boutique s''applique.
             Sur une commande a plusieurs produits, c''est **la plus haute** qui vaut — et une
             valeur a `0` ne bloque rien, elle signifie seulement que ce produit n''apporte pas
@@ -2753,6 +2761,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: '**Raccourci pour un produit sans choix.** Le prix est pose sur la variante
             unique, creee automatiquement. En lecture, ce champ renvoie ce prix — mais seulement
             si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.'
@@ -2793,6 +2802,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           nullable: true
         compare_at_price:
           anyOf:
@@ -2800,6 +2810,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           nullable: true
         sku:
           type: string
@@ -2840,6 +2851,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           nullable: true
         return_policy:
           type: string
@@ -2853,6 +2865,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
+          - type: 'null'
           description: Prix de la variante unique. **Absent si le produit a plusieurs variantes**
             — lire `variants` dans ce cas.
           nullable: true
