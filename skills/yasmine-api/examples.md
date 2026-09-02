@@ -312,7 +312,8 @@ curl -X POST "$BASE/v1/calls" \
         { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 },
         { "product_external_id": "SERUM-VITC", "quantity": 1 }
       ]
-    }
+    },
+    "call_params": { "purpose": "confirmation" }
   }'
 ```
 
@@ -808,6 +809,7 @@ La 2e requête retourne **bit-for-bit la même réponse** que la 1ère, avec en 
 Un payload invalide renvoie un `422` RFC 7807 avec `errors[]` listant chaque champ fautif :
 
 ```bash
+# payload volontairement invalide — il sert a montrer la forme du 422
 curl -X POST "$BASE/v1/calls" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \

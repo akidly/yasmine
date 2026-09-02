@@ -106,9 +106,14 @@ paths:
       x-status: live
       x-rate-limit: "60/minute"
       description: |
-        Crée un appel IA sortant. Le canal de délivrance (WhatsApp, GSM)
-        est choisi côté Yasmine via la configuration serveur — transparent
-        pour le reseller.
+        Crée un appel IA sortant.
+
+        **Le canal est choisi pour vous.** Omettez `call_params.channel` :
+        le canal par défaut de votre installation s'applique, et c'est le
+        bon dans la quasi-totalité des cas. Le préciser n'a d'intérêt que
+        si vous avez une raison de forcer une voie particulière — et tous
+        les canaux ne sont pas ouverts partout, un canal fermé renvoyant
+        `422 channel_not_available`.
 
         **Idempotency-Key obligatoire** : header `Idempotency-Key`
         requis (1-255 chars, UUID v4 recommandé). Scope par reseller, TTL
@@ -220,7 +225,6 @@ paths:
                   shop_info:
                     name: "GlowArt Paris"
                     sector: "beauté"
-                    tone: "friendly"
                     return_policy: "retour gratuit sous 14 jours"
                   order:
                     external_id: "CMD-2026-00123"
@@ -234,6 +238,7 @@ paths:
                   country: "FR"
                   call_params:
                     purpose: "retry"
+                    tone: "friendly"
                     voice_id: "coral"
                   metadata:
                     invoice_ref: "INV-789"
