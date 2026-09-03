@@ -10,12 +10,12 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Changed
 
-- **Une demande d'appel n'est plus refusée quand la ligne téléphonique
-  est momentanément injoignable.** Le `503 service_unavailable` avec
-  `Retry-After` qui pouvait répondre à `POST /v1/calls` sur le canal
-  téléphonique disparaît : la demande est acceptée et mise en file, et
-  l'appel part dès que la ligne revient, dans les 48 heures. Vous n'avez
-  plus à réessayer de votre côté.
+- **Une demande d'appel sur le canal téléphonique n'est plus jamais
+  refusée pour indisponibilité momentanée.** Le `503 service_unavailable`
+  avec `Retry-After` qui pouvait répondre à `POST /v1/calls` disparaît :
+  la demande est toujours acceptée, et l'appel part dès que possible, au
+  plus tard dans les 48 heures. Vous n'avez plus à réessayer de votre
+  côté.
 
 ### Added
 

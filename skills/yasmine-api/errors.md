@@ -161,7 +161,7 @@ ligne brute du tableau ci-dessus pour les autres slugs. Format stable, parsé au
 **Remediation** :
 - Respecter le header `Retry-After` (secondes) avant de retenter — c'est la valeur autoritaire.
 - Lire `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` (timestamp Unix) à chaque réponse 2xx pour anticiper.
-- Si la clé est partagée par plusieurs workers, créer une clé par worker (`POST /v1/me/api-keys`) — chaque clé a son bucket indépendant.
+- Si la clé est partagée par plusieurs processus de votre côté, créer une clé par processus (`POST /v1/me/api-keys`) — chaque clé a son bucket indépendant.
 - Voir `docs/getting-started.md §Rate limits`.
 
 **Example** :
