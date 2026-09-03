@@ -178,6 +178,14 @@ politique de versioning décrite dans `docs/versioning.md`.
   Aucune boutique n'était concernée — la remise la plus élevée en
   production valait 10.
 
+- **`max_discount` d'un produit plafonne lui aussi à 10 000.** Il
+  acceptait 1 000 000 : deux plafonds différents pour une même notion à
+  deux niveaux — le produit ne fait que surcharger sa boutique — sans
+  raison que personne ne pouvait deviner.
+
+  Aucun produit n'était concerné : la remise la plus élevée en
+  production valait 0.
+
 
 - **Cinq champs de boutique voient leur longueur maximale réduite.** Une
   valeur plus longue renvoie désormais `422`.
