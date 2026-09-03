@@ -19,4 +19,4 @@ La surface stable pour les intégrateurs est `/v1` servie sur `https://api.yasmi
 
 - [llms-full.txt](https://docs.yasmine.akidly.com/llms-full.txt): Concaténation brute des docs reseller ci-dessus pour ingestion LLM en un seul fetch. Régénéré à chaque modif de la doc source.
 - [Errors (HTML)](https://docs.yasmine.akidly.com/errors): Même catalogue que `errors.md`, rendu humain avec ancres par slug (`/errors#<slug>`).
-- [API Reference (Scalar)](https://docs.yasmine.akidly.com/reference): UI interactive OpenAPI avec try-it. 30 endpoints `live`.
+- [API Reference (Scalar)](https://docs.yasmine.akidly.com/reference): UI interactive OpenAPI avec try-it. 35 endpoints `live`.

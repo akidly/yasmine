@@ -736,7 +736,7 @@ mentionné restent intacts. Pour le retrouver : `?status=archived`.
 | 409 | `product_external_id_already_exists` | `external_id` déjà pris **dans cette boutique**. Le même identifiant reste libre dans une autre |
 | 404 | `product_not_found` | Produit inexistant, archivé, ou d'une autre boutique — corps identique |
 | 404 | `shop_not_found` | La boutique du chemin n'existe pas |
-| 422 | `validation_error` | `external_id` de déclinaison manquant ou en double, prix barré inférieur au prix, plus de trois axes d'options, `unit_price` sur un produit à plusieurs déclinaisons |
+| 422 | `validation_error` | prix manquant (sur le produit sans choix, ou sur une déclinaison), `unit_price: null` sur un `PATCH`, `external_id` de déclinaison manquant ou en double, prix barré inférieur au prix, plus de trois axes d'options, `unit_price` sur un produit à plusieurs déclinaisons |
 
 
 ## 0.ter Commander depuis le catalogue — la demande d'appel allégée
@@ -811,6 +811,85 @@ mesure, des frais de port ou un cadeau :
 ```
 
 Un produit absent du catalogue ne doit jamais bloquer un appel.
+
+## 0.ter Les commandes — déclarer, puis appeler par référence
+
+Une commande se déclare comme un produit : sous sa boutique, avec **votre**
+identifiant. Elle s'appelle ensuite par cette seule référence, autant de
+fois qu'il faut — les appels s'empilent sur elle, il n'y a plus de doublon
+de commande pour relancer un client.
+
+### Déclarer
+
+```bash
+curl -X POST "$BASE/v1/shops/shop-4471/orders" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_id": "CMD-2026-8891",
+    "customer": { "name": "Ahmed Bennani", "phone_number": "+212612345678" },
+    "amount": "487.00",
+    "delivery_address": "12 rue des Orangers, Casablanca",
+    "items": [
+      { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 },
+      { "product_external_id": "SERUM-VITC", "quantity": 1 }
+    ]
+  }'
+```
+
+Les articles sont **figés à la déclaration** : ce que le catalogue dit à ce
+moment-là — nom, prix, variantes — est copié dans la commande, et c'est
+cette copie que chaque appel lira. Une ligne décrite sur place avec `name`
+reste valide (frais de port, cadeau, article sur mesure). La réponse porte
+`order_status` (`PENDING` tant qu'aucun appel n'a abouti), la liste `calls`
+(vide pour l'instant) et `call_in_progress`.
+
+### Appeler
+
+```bash
+curl -X POST "$BASE/v1/calls" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "shop_external_id": "shop-4471",
+    "order_external_id": "CMD-2026-8891",
+    "call_params": { "purpose": "confirmation" }
+  }'
+```
+
+Trois champs. Le client, les articles et les montants viennent de la
+commande ; `customer` ne se fournit pas — il est celui de la commande, et
+se change par `PATCH` sur elle. Le nombre de tentatives précédentes n'est
+plus à déclarer : le serveur compte les appels déjà passés.
+
+Relancer le client plus tard : **la même requête**, avec une nouvelle
+`Idempotency-Key`. Tant qu'un appel n'est pas terminé, un second est
+refusé (`409 order_call_in_progress`).
+
+### Relire, corriger, archiver
+
+```bash
+curl "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+
+curl -X PATCH "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" \
+  -H "Authorization: Bearer $YK" -H "Content-Type: application/json" \
+  -d '{ "delivery_address": "14 rue des Orangers, Casablanca", "amount": "450.00" }'
+
+curl -X DELETE "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+```
+
+Le `PATCH` suit la règle des produits : absent = inchangé, `null` = effacé,
+`""` = 422. `customer`, `amount` et `items` ne s'effacent pas. `items`
+remplace la liste entière et refait la copie figée avec les prix du jour.
+Modifier ou archiver **pendant un appel en cours** est refusé.
+
+| Code | Slug | Quand |
+|---|---|---|
+| 409 | `order_external_id_already_exists` | `external_id` déjà pris **dans cette boutique** |
+| 404 | `order_not_found` | Commande inexistante, archivée, ou d'une autre boutique — corps identique |
+| 409 | `order_call_in_progress` | Un appel n'est pas terminé : modifier, archiver ou rappeler attendra |
+| 422 | `validation_error` | ni `items` ni `items_text`, `customer`/`amount`/`items` à `null`, `external_id` différent de l'URL |
 
 ## 1. Appel simple Maroc — commande à article unique (texte libre)
 
@@ -2185,9 +2264,11 @@ Certains `type` ajoutent des champs dédiés :
 | `idempotency_key_empty` | 400 | Header `Idempotency-Key` présent mais vide. Doit faire au moins 1 char. |
 | `idempotency_key_too_long` | 400 | Header `Idempotency-Key` > 255 chars. Limite stricte côté serveur. |
 | `idempotency_key_conflict` | 409 | Même `Idempotency-Key` réutilisée avec un body différent dans la fenêtre de 24 h. Générer une nouvelle clé pour une requête différente. Le body original n'est jamais ré-exposé. |
-| `order_external_id_already_exists` | 409 | `POST /v1/calls` avec `order.external_id` déjà utilisé pour ce boutique. Les commandes sont créées par INSERT strict (pas d'upsert) — pour atteindre à nouveau le client sur la même commande, relancer avec une nouvelle `Idempotency-Key` et incrémenter `order.previous_attempts`. Pour créer une commande distincte, utiliser une `external_id` différente. |
+| `order_external_id_already_exists` | 409 | `POST /v1/shops/{id}/orders`, ou `POST /v1/calls` avec `order.external_id`, sur un identifiant déjà utilisé dans cette boutique. La création est stricte. Pour rappeler le client sur la même commande : `POST /v1/calls` avec `order_external_id` — les appels s'empilent sur la commande. Pour une commande distincte, une `external_id` différente. |
 | `order_item_unknown_product` | 422 | `POST /v1/calls` : une ligne référence un produit ou une variante qui n'existe pas dans la boutique de l'appel. Le déclarer, ou décrire l'article sur place — une ligne avec `name` et `unit_price` reste valide, un produit non déclaré ne doit jamais bloquer un appel. |
 | `order_item_variant_required` | 422 | `POST /v1/calls` : la ligne référence un produit à plusieurs déclinaisons sans préciser laquelle. Le `detail` **liste celles qui existent**. Aucun choix n'est fait au hasard : l'agent annoncerait un article non commandé. |
+| `order_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/shops/{id}/orders/{external_id}`, ou `POST /v1/calls` avec `order_external_id`, sur une commande inexistante, archivée, ou d'une autre boutique. **Corps identique dans les trois cas.** |
+| `order_call_in_progress` | 409 | Un appel n'est pas terminé sur cette commande : la modifier, l'archiver ou lancer un autre appel est refusé. Attendre la fin de l'appel — `call_in_progress` sur la fiche de la commande dit quand c'est possible. |
 | `product_not_found` | 404 | `GET`/`PATCH`/`DELETE` sur un produit inexistant, archivé, ou appartenant à une autre boutique. **Corps identique dans les trois cas.** L'identifiant d'un produit n'est unique qu'à l'intérieur d'une boutique. |
 | `product_external_id_already_exists` | 409 | `POST` d'un produit dont l'`external_id` est déjà pris dans cette boutique. La création est stricte : utiliser `PATCH` pour modifier. |
 | `shop_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/shops/{external_id}` sur une boutique inexistante, archivée, ou appartenant à un autre compte. **Corps identique dans les trois cas** — aucune fuite d'existence. Lister avec `GET /v1/shops?status=all` pour retrouver une boutique archivée. |
@@ -2802,6 +2883,11 @@ tags:
       Catalogue d'une boutique : produits et leurs declinaisons. Un produit
       declare ici se commande ensuite par simple reference — son nom, son
       prix et ses variantes n'ont plus a etre repetes a chaque commande.
+  - name: Orders
+    description: |
+      Les commandes d'une boutique, declarees avec votre identifiant puis
+      appelees par reference — autant de fois qu'il faut, les appels
+      s'empilent sur la commande. Les articles sont figes a la declaration.
   - name: Internal
     description: |
       Routes techniques hors SLA `/v1/*` (probe santé). Ne sont **pas**
@@ -2829,6 +2915,15 @@ paths:
         si vous avez une raison de forcer une voie particulière — et tous
         les canaux ne sont pas ouverts partout, un canal fermé renvoyant
         `422 channel_not_available`.
+
+        **Deux façons de désigner la commande.** Décrite sur place, avec
+        `customer` et `order` — la forme historique, inchangée. Ou **par
+        référence**, avec `order_external_id` seul : la commande a été
+        déclarée via `POST /v1/shops/{id}/orders`, le serveur relit le
+        client, les articles figés et les montants, et rattache l'appel à
+        la commande. C'est la forme à privilégier : relancer le client se
+        fait avec la même référence, et « toutes les commandes de ce
+        produit » a une réponse.
 
         **Idempotency-Key obligatoire** : header `Idempotency-Key`
         requis (1-255 chars, UUID v4 recommandé). Scope par reseller, TTL
@@ -4094,6 +4189,11 @@ paths:
         s'y dépose. Vous n'avez rien à savoir de tout cela : envoyez un prix,
         relisez un prix.
 
+        **Le prix est obligatoire.** `unit_price` pour un produit sans choix,
+        ou celui de chaque entrée de `variants` : un produit sans prix est
+        refusé (422), parce qu'un agent qui ne sait pas répondre à « ça coûte
+        combien ? » ne confirme rien.
+
         **Dès qu'il y a plusieurs variantes, chacune doit porter son
         `external_id`** — sans quoi une commande ne pourrait pas désigner
         laquelle. Le refus est un 422 qui nomme les entrées fautives.
@@ -4277,7 +4377,8 @@ paths:
 
         **`unit_price` seul** ne vaut que pour un produit à variante unique.
         Sur un produit qui en a plusieurs, il est ambigu et refusé (422) :
-        c'est dans `variants` que le prix se pose.
+        c'est dans `variants` que le prix se pose. **`unit_price: null` est
+        refusé** dans tous les cas : un prix s'édite, il ne s'efface pas.
 
         **`external_id` ne peut pas être modifié** — il porte l'historique
         des commandes du produit. L'envoyer produit un 422.
@@ -4384,6 +4485,300 @@ paths:
                 properties:
                   status: { type: string, example: ok }
 
+  /v1/shops/{shop_external_id}/orders:
+    post:
+      operationId: createOrder
+      summary: Déclarer une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Déclare une commande sous une boutique, avec **votre** identifiant.
+        Minimum : `external_id`, `customer`, `amount`, et de quoi décrire le
+        contenu — `items` ou `items_text`.
+
+        Une commande déclarée s'appelle ensuite **par référence** :
+        `POST /v1/calls` avec `order_external_id`, et rien d'autre que les
+        paramètres de l'appel. Le serveur relit le client, les articles et
+        les montants. Relancer le client se fait avec la même référence :
+        les appels s'empilent sur la commande, jamais de doublon.
+
+        **Les articles sont figés ici.** Une ligne qui référence un produit
+        du catalogue (`product_external_id`, plus `variant_external_id` s'il
+        a plusieurs variantes) est résolue à la déclaration — nom, prix,
+        variantes, identifiants — et c'est cette copie que chaque appel
+        lira, même si le catalogue change ensuite. Une ligne décrite sur
+        place avec `name` reste valide : article sur mesure, frais de port,
+        cadeau.
+
+        **Le statut ne s'écrit pas.** `order_status` vient du résultat des
+        appels : `PENDING`, puis `CONFIRMED`, `CANCELLED`, `UNREACHABLE`…
+        Il se lit.
+
+        **Création stricte** : un `external_id` déjà pris dans cette
+        boutique renvoie un 409, jamais une mise à jour implicite.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderDeclare" }
+            examples:
+              par_reference:
+                summary: Deux articles du catalogue, un client, un montant
+                value:
+                  external_id: "CMD-2026-8891"
+                  customer:
+                    name: "Ahmed Bennani"
+                    phone_number: "+212612345678"
+                  amount: "487.00"
+                  delivery_address: "12 rue des Orangers, Casablanca"
+                  items:
+                    - product_external_id: "TSHIRT-BLANC"
+                      variant_external_id: "TSH-XL"
+                      quantity: 1
+                    - product_external_id: "SERUM-VITC"
+                      quantity: 1
+              avec_frais_de_port:
+                summary: Un article du catalogue et une ligne décrite sur place
+                value:
+                  external_id: "CMD-2026-8892"
+                  customer:
+                    name: "Salma Idrissi"
+                    phone_number: "+212661234567"
+                    gender: "female"
+                  amount: "179.00"
+                  shipping_cost: "30.00"
+                  estimated_delivery_date: "2026-09-05"
+                  order_notes: "Cadeau : ne pas mentionner le prix"
+                  items:
+                    - product_external_id: "TSHIRT-BLANC"
+                      variant_external_id: "TSH-M"
+                      quantity: 1
+                    - name: "Frais de livraison"
+                      quantity: 1
+                      unit_price: "30.00"
+      responses:
+        "201":
+          description: Commande déclarée, articles figés.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "409":
+          description: |
+            `external_id` déjà utilisé dans cette boutique
+            (`order_external_id_already_exists`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : champ manquant, trop
+            long, chaîne vide, champ inconnu, ni `items` ni `items_text`.
+            Ou une ligne qui référence un produit inconnu
+            (`order_item_unknown_product`) ou une variante non précisée
+            (`order_item_variant_required`, le `detail` liste celles qui
+            existent).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    get:
+      operationId: listOrders
+      summary: Lister les commandes d'une boutique
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Liste paginée des commandes d'une boutique, de la plus récente à
+        la plus ancienne. Chaque fiche est renvoyée complète, appels
+        compris.
+
+        **Pagination** : curseur opaque, valable 24 h. Passez le
+        `next_cursor` de la réponse en `?cursor=` pour la page suivante.
+        Défaut 50 résultats, maximum 200.
+
+        **`?status=`** vaut `active` par défaut : les commandes archivées
+        sont masquées. `archived` ne montre qu'elles, `all` ne filtre pas.
+        **`?order_status=`** ne garde que les commandes dans cet état
+        (`PENDING`, `CONFIRMED`…).
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Curseur de la page suivante, tel que renvoyé par `next_cursor`.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
+        - in: query
+          name: order_status
+          schema: { type: string, maxLength: 32 }
+          description: Ne garder que les commandes dans cet état (`PENDING`, `CONFIRMED`…).
+      responses:
+        "200":
+          description: Page de résultats.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedOrders" }
+        "400":
+          description: |
+            Curseur malformé, altéré ou expiré (`invalid_cursor`,
+            `cursor_expired`). Refaire la première requête sans `cursor`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/shops/{shop_external_id}/orders/{order_external_id}:
+    get:
+      operationId: getOrder
+      summary: Consulter une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Renvoie la fiche complète d'une commande, adressée par **vos**
+        identifiants : client, articles figés, montants, `order_status`,
+        et la liste de ses appels avec leur résultat. `call_in_progress`
+        dit si un appel n'est pas terminé — la commande ne peut alors ni
+        être modifiée, ni archivée, ni rappelée.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/OrderExternalId"
+      responses:
+        "200":
+          description: Fiche de la commande.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    patch:
+      operationId: updateOrder
+      summary: Modifier une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Modification partielle. **Trois cas à distinguer :**
+
+        | Dans le corps | Effet |
+        |---|---|
+        | Champ **absent** | Inchangé |
+        | Champ à **`null`** | **Effacé** |
+        | Champ à **`""`** | Rejeté (422) |
+
+        Trois champs ne s'effacent pas — `customer`, `amount`, `items` :
+        une commande a toujours un client, un montant et un contenu.
+        Les envoyer à `null` produit un 422.
+
+        ⚠️ **`items` remplace entièrement la liste**, et chaque ligne est
+        résolue à nouveau depuis le catalogue : la copie figée est refaite
+        avec les prix du jour. Ne pas envoyer `items` la laisse intacte.
+
+        **Refusé pendant un appel en cours** (`409 order_call_in_progress`) :
+        l'agent est en ligne avec ce qu'il a lu. Attendre la fin de l'appel.
+
+        **`external_id` ne peut pas être modifié** — il porte l'historique
+        des appels. L'envoyer avec une autre valeur produit un 422.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/OrderExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderPatch" }
+            examples:
+              adresse_et_montant:
+                summary: L'adresse corrigée, une remise consentie
+                value:
+                  delivery_address: "14 rue des Orangers, Casablanca"
+                  amount: "450.00"
+                  discount: "37.00"
+              articles:
+                summary: La liste complète, un article en moins
+                value:
+                  items:
+                    - product_external_id: "SERUM-VITC"
+                      quantity: 1
+                  amount: "320.00"
+      responses:
+        "200":
+          description: Fiche mise à jour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "409":
+          description: |
+            Un appel est en cours sur cette commande
+            (`order_call_in_progress`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : chaîne vide, champ
+            inconnu, `external_id` différent de l'URL, `customer`,
+            `amount` ou `items` à `null` ; ou une ligne qui référence un
+            produit inconnu (`order_item_unknown_product`) ou une variante
+            non précisée (`order_item_variant_required`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    delete:
+      operationId: archiveOrder
+      summary: Archiver une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Archive la commande — **elle n'est pas supprimée**. Elle disparaît
+        de la liste par défaut et ne peut plus être appelée ; ses appels et
+        son historique restent lisibles (`?status=archived`).
+
+        **Refusé pendant un appel en cours** (`409 order_call_in_progress`).
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/OrderExternalId"
+      responses:
+        "204":
+          description: Commande archivée. Aucun corps.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "409":
+          description: |
+            Un appel est en cours sur cette commande
+            (`order_call_in_progress`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -4413,6 +4808,15 @@ components:
         Identifiant du produit **dans votre systeme**, celui fourni a la
         creation. Jamais notre UUID interne.
       example: "TSHIRT-01"
+    OrderExternalId:
+      in: path
+      name: order_external_id
+      required: true
+      schema: { type: string, maxLength: 128, pattern: "^[a-zA-Z0-9_.-]+$" }
+      description: |
+        Identifiant de la commande **dans votre systeme**, celui fourni a la
+        declaration. Jamais notre UUID interne.
+      example: "CMD-2026-8891"
     RequestIdHeader:
       in: header
       name: X-Request-ID
@@ -4528,6 +4932,19 @@ components:
         n'existe pas, c'est archive, ou cela appartient a un autre compte.
         Une reponse differenciee permettrait de deviner ce qui existe
         ailleurs.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    OrderNotFound:
+      description: |
+        Rien a cette adresse. **Deux slugs possibles**, et le corps ne dit
+        rien de plus :
+
+        - `shop_not_found` — la boutique du chemin est introuvable ;
+        - `order_not_found` — la boutique existe, la commande non.
+
+        Chaque slug couvre **trois situations au corps identique** : cela
+        n'existe pas, c'est archive, ou cela appartient a un autre compte.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
@@ -5295,10 +5712,10 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
-          - type: 'null'
-          description: Prix de CETTE variante, dans la devise du pays de la boutique. C'est ici
-            que vit le prix — le XL peut couter plus cher que le S.
-          nullable: true
+          description: 'Prix de CETTE variante, dans la devise du pays de la boutique. **Obligatoire**
+            : une variante sans prix ne se vend pas, et l''agent ne saurait pas repondre a « ca
+            coute combien ? ». C''est ici que vit le prix — le XL peut couter plus cher que le
+            S.'
         compare_at_price:
           anyOf:
           - maximum: 1000000.0
@@ -5320,10 +5737,17 @@ components:
           description: Reference de stock, a votre usage. Conservee telle quelle et renvoyee dans
             les lectures ; jamais prononcee au client.
           example: TSH-BLC-XL
+      required:
+      - unit_price
       type: object
     ProductCreate:
       additionalProperties: false
-      description: 'Payload `POST /v1/shops/{id}/products`. Minimum : `external_id`, `name`.'
+      description: 'Payload `POST /v1/shops/{id}/products`.
+
+
+        Minimum : `external_id`, `name`, et un prix — `unit_price` pour un
+
+        produit sans choix, ou celui de chaque entree de `variants`.'
       properties:
         name:
           description: Nom du produit tel qu'il sera prononce au client. Ecrivez-le comme on le
@@ -5385,9 +5809,11 @@ components:
             type: string
             example: '250.00'
           - type: 'null'
-          description: '**Raccourci pour un produit sans choix.** Le prix est pose sur la variante
-            unique, creee automatiquement. En lecture, ce champ renvoie ce prix — mais seulement
-            si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.'
+          description: '**Le prix d''un produit sans choix.** Il est pose sur la variante unique,
+            creee automatiquement. **Obligatoire a la creation** si `variants` est absent : un
+            produit sans prix n''existe pas. En lecture, ce champ renvoie ce prix — mais seulement
+            si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.
+            Jamais `null` sur un `PATCH` : un prix s''edite, il ne s''efface pas.'
           nullable: true
         variants:
           items:
@@ -5493,9 +5919,11 @@ components:
             type: string
             example: '250.00'
           - type: 'null'
-          description: '**Raccourci pour un produit sans choix.** Le prix est pose sur la variante
-            unique, creee automatiquement. En lecture, ce champ renvoie ce prix — mais seulement
-            si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.'
+          description: '**Le prix d''un produit sans choix.** Il est pose sur la variante unique,
+            creee automatiquement. **Obligatoire a la creation** si `variants` est absent : un
+            produit sans prix n''existe pas. En lecture, ce champ renvoie ce prix — mais seulement
+            si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.
+            Jamais `null` sur un `PATCH` : un prix s''edite, il ne s''efface pas.'
           nullable: true
         variants:
           items:
@@ -5542,8 +5970,7 @@ components:
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
-          - type: 'null'
-          nullable: true
+          description: Prix de cette variante. Toujours present.
         compare_at_price:
           anyOf:
           - type: number
@@ -5563,6 +5990,7 @@ components:
       required:
       - id
       - options
+      - unit_price
       - position
       type: object
     ProductOut:
@@ -5651,6 +6079,623 @@ components:
       - data
       - has_more
       type: object
+    OrderDeclare:
+      additionalProperties: false
+      description: 'Payload `POST /v1/shops/{id}/orders`.
+
+
+        Minimum : `external_id`, `customer`, `amount`, et de quoi decrire le
+
+        contenu — `items` ou `items_text`.'
+      properties:
+        customer:
+          $ref: '#/components/schemas/CustomerInput'
+          description: 'Le client a appeler : `name` + `phone_number` requis, genre, email, notes
+            et langue facultatifs.'
+        items:
+          items:
+            $ref: '#/components/schemas/OrderItem'
+          maxItems: 50
+          minItems: 1
+          type: array
+          nullable: true
+          description: 'Les articles. Une ligne reference un produit declare (`product_external_id`,
+            plus `variant_external_id` s''il a plusieurs variantes) ou se decrit sur place (`name`…).
+            **Figes a la declaration** : ce que le catalogue dit a ce moment-la est copie dans
+            la commande, et c''est cette copie que chaque appel lira. Sur un `PATCH`, la liste
+            envoyee remplace l''ancienne, et la copie est refaite.'
+        items_text:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: Resume libre du contenu, cite tel quel au client. Requis si `items` est
+            absent.
+        delivery_address:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Adresse de livraison. Absente : l''agent la collecte aupres du client
+            pendant l''appel.'
+        amount:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            maximum: 1000000.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          description: Montant total annonce au client, dans la devise de la commande.
+        currency:
+          enum:
+          - MAD
+          - EUR
+          - USD
+          - TND
+          - DZD
+          type: string
+          nullable: true
+          description: 'Devise ISO 4217. Absente : celle du pays de la boutique.'
+        order_date:
+          format: date
+          type: string
+          nullable: true
+        subtotal:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        shipping_cost:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        discount:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        taxes:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        delivery_method:
+          enum:
+          - standard
+          - express
+          - pickup
+          type: string
+          nullable: true
+        delivery_zone:
+          enum:
+          - urban
+          - suburban
+          - rural
+          type: string
+          nullable: true
+        estimated_delivery_date:
+          format: date
+          type: string
+          nullable: true
+          description: Date de livraison estimee, que l'agent peut annoncer.
+        order_notes:
+          maxLength: 300
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Ce que l''agent doit savoir sur cette commande : « cadeau, ne pas mentionner
+            le prix ».'
+        source:
+          enum:
+          - web
+          - pos
+          - ads
+          - other
+          type: string
+          nullable: true
+        promo_code:
+          maxLength: 50
+          minLength: 1
+          type: string
+          nullable: true
+        max_discount:
+          anyOf:
+          - maximum: 10000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          description: Remise maximale accordable sur cette commande — le niveau le plus precis
+            de la cascade commande > produits > boutique.
+          nullable: true
+        metadata:
+          additionalProperties: true
+          type: object
+          nullable: true
+          description: Metadata libre du reseller. Max 2 KB serialise JSON.
+        external_id:
+          description: Identifiant de la commande dans VOTRE systeme, unique par boutique. Sert
+            d'adresse dans l'URL et de reference pour lancer l'appel. **Immuable** apres creation.
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          example: CMD-2026-8891
+      required:
+      - customer
+      - amount
+      - external_id
+      type: object
+    OrderPatch:
+      additionalProperties: false
+      description: 'Payload `PATCH` — modification partielle.
+
+
+        Champ **absent** = inchange, champ a **`null`** = efface, chaine vide =
+
+        422. Trois champs ne s''effacent pas — `customer`, `amount`, `items` :
+
+        une commande a toujours un client, un montant et un contenu.'
+      properties:
+        customer:
+          $ref: '#/components/schemas/CustomerInput'
+          nullable: true
+          description: 'Le client a appeler : `name` + `phone_number` requis, genre, email, notes
+            et langue facultatifs. C''est lui que chaque appel sur cette commande joindra.'
+        items:
+          items:
+            $ref: '#/components/schemas/OrderItem'
+          maxItems: 50
+          minItems: 1
+          type: array
+          nullable: true
+          description: 'Les articles. Une ligne reference un produit declare (`product_external_id`,
+            plus `variant_external_id` s''il a plusieurs variantes) ou se decrit sur place (`name`…).
+            **Figes a la declaration** : ce que le catalogue dit a ce moment-la est copie dans
+            la commande, et c''est cette copie que chaque appel lira. Sur un `PATCH`, la liste
+            envoyee remplace l''ancienne, et la copie est refaite.'
+        items_text:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: Resume libre du contenu, cite tel quel au client. Requis si `items` est
+            absent.
+        delivery_address:
+          maxLength: 500
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Adresse de livraison. Absente : l''agent la collecte aupres du client
+            pendant l''appel.'
+        amount:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            maximum: 1000000.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          description: 'Montant total annonce au client, dans la devise de la commande. C''est
+            ce que l''agent dit : les articles servent a detailler, pas a le calculer.'
+          nullable: true
+        currency:
+          enum:
+          - MAD
+          - EUR
+          - USD
+          - TND
+          - DZD
+          type: string
+          nullable: true
+          description: 'Devise ISO 4217. Absente : celle du pays de la boutique.'
+        order_date:
+          format: date
+          type: string
+          nullable: true
+        subtotal:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        shipping_cost:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        discount:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        taxes:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        delivery_method:
+          enum:
+          - standard
+          - express
+          - pickup
+          type: string
+          nullable: true
+        delivery_zone:
+          enum:
+          - urban
+          - suburban
+          - rural
+          type: string
+          nullable: true
+        estimated_delivery_date:
+          format: date
+          type: string
+          nullable: true
+          description: Date de livraison estimee, que l'agent peut annoncer.
+        order_notes:
+          maxLength: 300
+          minLength: 1
+          type: string
+          nullable: true
+          description: 'Ce que l''agent doit savoir sur cette commande : « cadeau, ne pas mentionner
+            le prix ».'
+        source:
+          enum:
+          - web
+          - pos
+          - ads
+          - other
+          type: string
+          nullable: true
+        promo_code:
+          maxLength: 50
+          minLength: 1
+          type: string
+          nullable: true
+        max_discount:
+          anyOf:
+          - maximum: 10000.0
+            minimum: 0.0
+            type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          description: Remise maximale accordable sur cette commande — le niveau le plus precis
+            de la cascade commande > produits > boutique.
+          nullable: true
+        metadata:
+          additionalProperties: true
+          type: object
+          nullable: true
+          description: Metadata libre du reseller. Max 2 KB serialise JSON.
+        external_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          nullable: true
+          description: 'Facultatif, et purement confirmatif : s''il est present il doit valoir
+            celui de l''URL. L''identifiant d''une commande ne se modifie pas.'
+      type: object
+    OrderOut:
+      additionalProperties: false
+      description: Fiche complete d'une commande declaree.
+      properties:
+        id:
+          format: uuid
+          type: string
+        external_id:
+          type: string
+        customer:
+          $ref: '#/components/schemas/OrderCustomerOut'
+          nullable: true
+        items:
+          items:
+            $ref: '#/components/schemas/OrderItemOut'
+          type: array
+        items_text:
+          type: string
+          nullable: true
+        delivery_address:
+          type: string
+          nullable: true
+        amount:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        order_date:
+          format: date
+          type: string
+          nullable: true
+        subtotal:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        shipping_cost:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        discount:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        taxes:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        delivery_method:
+          type: string
+          nullable: true
+        delivery_zone:
+          type: string
+          nullable: true
+        estimated_delivery_date:
+          format: date
+          type: string
+          nullable: true
+        order_notes:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        promo_code:
+          type: string
+          nullable: true
+        max_discount:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        metadata:
+          additionalProperties: true
+          type: object
+          nullable: true
+        order_status:
+          description: 'Ou en est la commande : `PENDING` avant tout appel abouti, puis `CONFIRMED`,
+            `CANCELLED`, `UNREACHABLE`… selon le resultat de l''appel. **Jamais modifiable a la
+            main** : il se lit.'
+          type: string
+        calls:
+          description: Les appels passes sur cette commande, du plus ancien au plus recent.
+          items:
+            $ref: '#/components/schemas/OrderCallOut'
+          type: array
+        call_in_progress:
+          description: 'Vrai quand un appel n''est pas termine : la commande ne peut alors ni
+            etre modifiee, ni archivee, ni rappelee.'
+          type: boolean
+        status:
+          enum:
+          - active
+          - archived
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        archived_at:
+          format: date-time
+          type: string
+          nullable: true
+      required:
+      - id
+      - external_id
+      - items
+      - order_status
+      - calls
+      - call_in_progress
+      - status
+      - created_at
+      - updated_at
+      type: object
+    OrderCustomerOut:
+      additionalProperties: false
+      description: Le client d'une commande, tel que renvoye.
+      properties:
+        name:
+          type: string
+          nullable: true
+        phone_number:
+          type: string
+        gender:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+      required:
+      - phone_number
+      type: object
+    OrderItemOut:
+      description: 'Un article de la copie figee.
+
+
+        Les cles inconnues sont ignorees a la lecture : la copie d''une
+
+        commande ancienne peut porter des cles d''un format anterieur.'
+      properties:
+        name:
+          type: string
+          nullable: true
+        quantity:
+          default: 1
+          type: integer
+        unit_price:
+          anyOf:
+          - type: number
+          - pattern: ^[0-9]+([.][0-9]+)?$
+            type: string
+            example: '250.00'
+          - type: 'null'
+          nullable: true
+        variants:
+          items:
+            $ref: '#/components/schemas/OrderItemVariant'
+          type: array
+          nullable: true
+        available_variants:
+          items:
+            items:
+              $ref: '#/components/schemas/OrderItemVariant'
+            type: array
+          type: array
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        sku:
+          type: string
+          nullable: true
+        product_url:
+          type: string
+          nullable: true
+        product_external_id:
+          type: string
+          nullable: true
+        variant_external_id:
+          type: string
+          nullable: true
+        product_id:
+          type: string
+          nullable: true
+        variant_id:
+          type: string
+          nullable: true
+      type: object
+      additionalProperties: false
+    OrderCallOut:
+      additionalProperties: false
+      description: 'Un appel passe sur la commande, en resume. Le detail complet se lit
+
+        sur `GET /v1/calls/{id}`.'
+      properties:
+        id:
+          type: string
+        request_status:
+          type: string
+        call_status:
+          type: string
+        result:
+          type: string
+          nullable: true
+        result_detail:
+          type: string
+          nullable: true
+        created_at:
+          format: date-time
+          type: string
+      required:
+      - id
+      - request_status
+      - call_status
+      - created_at
+      type: object
+    PaginatedOrders:
+      additionalProperties: false
+      description: Enveloppe paginee `GET /v1/shops/{id}/orders`.
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/OrderOut'
+          type: array
+        next_cursor:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+      required:
+      - data
+      - has_more
+      type: object
+    OrderItemVariant:
+      type: object
+      additionalProperties: false
+      description: "Une paire nom/valeur d'une variante, telle que citee au client (« Taille : XL »)."
+      properties:
+        name: { type: string, maxLength: 40 }
+        value: { type: string, maxLength: 80 }
+      required: [name, value]
     Problem:
       type: object
       required: [type, title, status]
@@ -6206,7 +7251,7 @@ components:
             `max_call_duration_seconds`.
     CallCreate:
       type: object
-      required: [customer, shop_external_id, order, call_params]
+      required: [shop_external_id, call_params]
       additionalProperties: false
       description: |
         Payload `POST /v1/calls` — structure complète imbriquée.
@@ -6230,6 +7275,24 @@ components:
           $ref: "#/components/schemas/ShopInfoInput"
         order:
           $ref: "#/components/schemas/OrderInput"
+        order_external_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^[a-zA-Z0-9_.-]+$"
+          description: |
+            **L'appel par référence.** Identifiant d'une commande déjà
+            déclarée via `POST /v1/shops/{id}/orders`, dans la boutique de
+            `shop_external_id`. Le serveur relit tout — client, articles
+            figés, montants — et rattache l'appel à la commande. Relancer le
+            client se fait avec la même référence : les appels s'empilent
+            sur la commande, jamais de doublon. Refusé
+            (`409 order_call_in_progress`) si un appel est déjà en cours.
+
+            **Exactement l'un des deux** : `order` (commande décrite sur
+            place, avec `customer`), ou `order_external_id` (sans
+            `customer`, qui est celui de la commande).
+          examples: ["CMD-2026-8891"]
         country:
           type: string
           enum: [MA, DZ, TN, FR]
@@ -7180,6 +8243,38 @@ politique de versioning décrite dans `docs/versioning.md`.
   refus est explicite à dessein : un appel silencieusement re-routé vers un
   autre canal serait indétectable de votre côté.
 
+- **Nouvelle ressource `/v1/shops/{shop_external_id}/orders` — déclarez
+  une commande, puis appelez-la par référence.** Cinq routes, calquées sur
+  celles des produits : `POST`, `GET` (paginé, filtrable par
+  `order_status`), `GET /{id}`, `PATCH`, `DELETE` (archive). Minimum :
+  `external_id`, `customer`, `amount`, et `items` ou `items_text`.
+
+  **`POST /v1/calls` accepte `order_external_id`** à la place de `order` et
+  `customer` : le serveur relit le client, les articles et les montants de
+  la commande déclarée, et rattache l'appel à la commande. Relancer le
+  client se fait avec la même référence — les appels s'empilent sur la
+  commande, il n'y a plus de doublon de commande. La forme historique,
+  `customer` + `order` décrits sur place, est inchangée.
+
+  Points de contrat à connaître avant d'intégrer :
+
+  - **Les articles sont figés à la déclaration.** Une ligne qui référence
+    un produit est résolue à ce moment-là, identifiants compris ; un
+    produit archivé ensuite ne bloque pas l'appel d'une commande passée.
+  - **`order_status` se lit, ne s'écrit pas.** Il vient du résultat des
+    appels. La fiche porte aussi la liste `calls` et `call_in_progress`.
+  - **Pendant un appel en cours, la commande ne bouge pas** : `PATCH`,
+    `DELETE` et un second `POST /v1/calls` renvoient `409
+    order_call_in_progress`.
+  - **`customer`, `amount` et `items` ne s'effacent pas** (`422`) ;
+    `items` en `PATCH` remplace la liste entière.
+  - **`previous_attempts` n'est plus à déclarer** sur un appel par
+    référence : le serveur compte les appels déjà passés.
+
+  Deux nouveaux slugs : `order_not_found` (404) et
+  `order_call_in_progress` (409). `order_external_id_already_exists` (409)
+  vaut aussi pour `POST /v1/shops/{id}/orders`.
+
 - **Nouvelle ressource catalogue `/v1/shops/{shop_external_id}/products` —
   déclarez vos produits, puis commandez-les par référence.** Cinq routes,
   calquées sur celles des boutiques : `POST`, `GET` (paginé), `GET /{id}`,
@@ -7194,6 +8289,11 @@ politique de versioning décrite dans `docs/versioning.md`.
 
   Points de contrat à connaître avant d'intégrer :
 
+  - **Le prix est obligatoire.** `unit_price` sur un produit sans choix, ou
+    sur chacune des `variants` : un produit sans prix est refusé (`422`),
+    et `unit_price: null` sur un `PATCH` aussi — un prix s'édite, il ne
+    s'efface pas. Un agent qui ne sait pas répondre à « ça coûte combien ? »
+    ne confirme rien.
   - **Plusieurs déclinaisons ⇒ chacune porte son `external_id`.** Sans cela
     une commande ne pourrait pas désigner laquelle. Refus en `422` nommant
     les entrées fautives.

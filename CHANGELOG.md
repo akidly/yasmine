@@ -22,6 +22,38 @@ politique de versioning décrite dans `docs/versioning.md`.
   refus est explicite à dessein : un appel silencieusement re-routé vers un
   autre canal serait indétectable de votre côté.
 
+- **Nouvelle ressource `/v1/shops/{shop_external_id}/orders` — déclarez
+  une commande, puis appelez-la par référence.** Cinq routes, calquées sur
+  celles des produits : `POST`, `GET` (paginé, filtrable par
+  `order_status`), `GET /{id}`, `PATCH`, `DELETE` (archive). Minimum :
+  `external_id`, `customer`, `amount`, et `items` ou `items_text`.
+
+  **`POST /v1/calls` accepte `order_external_id`** à la place de `order` et
+  `customer` : le serveur relit le client, les articles et les montants de
+  la commande déclarée, et rattache l'appel à la commande. Relancer le
+  client se fait avec la même référence — les appels s'empilent sur la
+  commande, il n'y a plus de doublon de commande. La forme historique,
+  `customer` + `order` décrits sur place, est inchangée.
+
+  Points de contrat à connaître avant d'intégrer :
+
+  - **Les articles sont figés à la déclaration.** Une ligne qui référence
+    un produit est résolue à ce moment-là, identifiants compris ; un
+    produit archivé ensuite ne bloque pas l'appel d'une commande passée.
+  - **`order_status` se lit, ne s'écrit pas.** Il vient du résultat des
+    appels. La fiche porte aussi la liste `calls` et `call_in_progress`.
+  - **Pendant un appel en cours, la commande ne bouge pas** : `PATCH`,
+    `DELETE` et un second `POST /v1/calls` renvoient `409
+    order_call_in_progress`.
+  - **`customer`, `amount` et `items` ne s'effacent pas** (`422`) ;
+    `items` en `PATCH` remplace la liste entière.
+  - **`previous_attempts` n'est plus à déclarer** sur un appel par
+    référence : le serveur compte les appels déjà passés.
+
+  Deux nouveaux slugs : `order_not_found` (404) et
+  `order_call_in_progress` (409). `order_external_id_already_exists` (409)
+  vaut aussi pour `POST /v1/shops/{id}/orders`.
+
 - **Nouvelle ressource catalogue `/v1/shops/{shop_external_id}/products` —
   déclarez vos produits, puis commandez-les par référence.** Cinq routes,
   calquées sur celles des boutiques : `POST`, `GET` (paginé), `GET /{id}`,
@@ -36,6 +68,11 @@ politique de versioning décrite dans `docs/versioning.md`.
 
   Points de contrat à connaître avant d'intégrer :
 
+  - **Le prix est obligatoire.** `unit_price` sur un produit sans choix, ou
+    sur chacune des `variants` : un produit sans prix est refusé (`422`),
+    et `unit_price: null` sur un `PATCH` aussi — un prix s'édite, il ne
+    s'efface pas. Un agent qui ne sait pas répondre à « ça coûte combien ? »
+    ne confirme rien.
   - **Plusieurs déclinaisons ⇒ chacune porte son `external_id`.** Sans cela
     une commande ne pourrait pas désigner laquelle. Refus en `422` nommant
     les entrées fautives.

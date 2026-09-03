@@ -285,7 +285,7 @@ mentionné restent intacts. Pour le retrouver : `?status=archived`.
 | 409 | `product_external_id_already_exists` | `external_id` déjà pris **dans cette boutique**. Le même identifiant reste libre dans une autre |
 | 404 | `product_not_found` | Produit inexistant, archivé, ou d'une autre boutique — corps identique |
 | 404 | `shop_not_found` | La boutique du chemin n'existe pas |
-| 422 | `validation_error` | `external_id` de déclinaison manquant ou en double, prix barré inférieur au prix, plus de trois axes d'options, `unit_price` sur un produit à plusieurs déclinaisons |
+| 422 | `validation_error` | prix manquant (sur le produit sans choix, ou sur une déclinaison), `unit_price: null` sur un `PATCH`, `external_id` de déclinaison manquant ou en double, prix barré inférieur au prix, plus de trois axes d'options, `unit_price` sur un produit à plusieurs déclinaisons |
 
 
 ## 0.ter Commander depuis le catalogue — la demande d'appel allégée
@@ -360,6 +360,85 @@ mesure, des frais de port ou un cadeau :
 ```
 
 Un produit absent du catalogue ne doit jamais bloquer un appel.
+
+## 0.ter Les commandes — déclarer, puis appeler par référence
+
+Une commande se déclare comme un produit : sous sa boutique, avec **votre**
+identifiant. Elle s'appelle ensuite par cette seule référence, autant de
+fois qu'il faut — les appels s'empilent sur elle, il n'y a plus de doublon
+de commande pour relancer un client.
+
+### Déclarer
+
+```bash
+curl -X POST "$BASE/v1/shops/shop-4471/orders" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_id": "CMD-2026-8891",
+    "customer": { "name": "Ahmed Bennani", "phone_number": "+212612345678" },
+    "amount": "487.00",
+    "delivery_address": "12 rue des Orangers, Casablanca",
+    "items": [
+      { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 },
+      { "product_external_id": "SERUM-VITC", "quantity": 1 }
+    ]
+  }'
+```
+
+Les articles sont **figés à la déclaration** : ce que le catalogue dit à ce
+moment-là — nom, prix, variantes — est copié dans la commande, et c'est
+cette copie que chaque appel lira. Une ligne décrite sur place avec `name`
+reste valide (frais de port, cadeau, article sur mesure). La réponse porte
+`order_status` (`PENDING` tant qu'aucun appel n'a abouti), la liste `calls`
+(vide pour l'instant) et `call_in_progress`.
+
+### Appeler
+
+```bash
+curl -X POST "$BASE/v1/calls" \
+  -H "Authorization: Bearer $YK" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "shop_external_id": "shop-4471",
+    "order_external_id": "CMD-2026-8891",
+    "call_params": { "purpose": "confirmation" }
+  }'
+```
+
+Trois champs. Le client, les articles et les montants viennent de la
+commande ; `customer` ne se fournit pas — il est celui de la commande, et
+se change par `PATCH` sur elle. Le nombre de tentatives précédentes n'est
+plus à déclarer : le serveur compte les appels déjà passés.
+
+Relancer le client plus tard : **la même requête**, avec une nouvelle
+`Idempotency-Key`. Tant qu'un appel n'est pas terminé, un second est
+refusé (`409 order_call_in_progress`).
+
+### Relire, corriger, archiver
+
+```bash
+curl "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+
+curl -X PATCH "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" \
+  -H "Authorization: Bearer $YK" -H "Content-Type: application/json" \
+  -d '{ "delivery_address": "14 rue des Orangers, Casablanca", "amount": "450.00" }'
+
+curl -X DELETE "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+```
+
+Le `PATCH` suit la règle des produits : absent = inchangé, `null` = effacé,
+`""` = 422. `customer`, `amount` et `items` ne s'effacent pas. `items`
+remplace la liste entière et refait la copie figée avec les prix du jour.
+Modifier ou archiver **pendant un appel en cours** est refusé.
+
+| Code | Slug | Quand |
+|---|---|---|
+| 409 | `order_external_id_already_exists` | `external_id` déjà pris **dans cette boutique** |
+| 404 | `order_not_found` | Commande inexistante, archivée, ou d'une autre boutique — corps identique |
+| 409 | `order_call_in_progress` | Un appel n'est pas terminé : modifier, archiver ou rappeler attendra |
+| 422 | `validation_error` | ni `items` ni `items_text`, `customer`/`amount`/`items` à `null`, `external_id` différent de l'URL |
 
 ## 1. Appel simple Maroc — commande à article unique (texte libre)
 

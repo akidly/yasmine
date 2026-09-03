@@ -60,7 +60,7 @@ is missing, archived, or owned by another account.
 ## Products — the same idea, one level down
 
 `POST /v1/shops/{shop_external_id}/products` adds a product to a shop's
-catalogue. Minimum: `external_id`, `name`. A product declared here can be
+catalogue. Minimum: `external_id`, `name`, and a price. A product declared here can be
 ordered by reference alone — `POST /v1/calls` reads its name, description,
 price and variants from the catalogue instead of having them repeated.
 
@@ -70,6 +70,10 @@ omit `variants` and one nameless variant is created for it, holding
 `unit_price`. You never have to think about it: send a price, read a price
 back.
 
+- **The price is mandatory** — `unit_price` on a product with no choices,
+  or on every entry of `variants`. A product without a price is rejected
+  (422), and so is `unit_price: null` on a `PATCH`: a price is edited,
+  never erased.
 - **Several variants ⇒ each needs its own `external_id`**, otherwise an
   order cannot say which one. Rejected with 422 naming the offending
   entries.
@@ -92,6 +96,37 @@ Errors: `409 product_external_id_already_exists` (unique per shop only —
 the same id is free in another shop), `404 product_not_found`,
 `422 order_item_unknown_product`, `422 order_item_variant_required` whose
 `detail` lists the variants that do exist.
+
+## Orders as a resource (declare, then call by reference)
+
+`POST /v1/shops/{shop_external_id}/orders` declares an order under a shop
+with **your** identifier. Minimum: `external_id`, `customer`, `amount`, and
+either `items` or `items_text`. Same five routes as products: `POST`, `GET`
+(paginated, `?order_status=` filter), `GET /{id}`, `PATCH`, `DELETE`
+(archives).
+
+Then call it by reference — `POST /v1/calls` with `shop_external_id`,
+`order_external_id` and `call_params` only. The server reads the customer,
+the frozen items and the amounts from the order and attaches the call to
+it. To retry the customer later, send the same request with a fresh
+`Idempotency-Key`: calls stack on the order, there is never a duplicate
+order. Prefer this form over describing the order inline.
+
+- **Items are frozen at declaration.** A line referencing a catalogue
+  product is resolved then (name, price, variants, ids); a product archived
+  afterwards does not block calls on past orders. `PATCH` with `items`
+  replaces the whole list and refreezes it.
+- **`order_status` is read-only** — it comes from call results. The order
+  also exposes `calls` and `call_in_progress`.
+- **While a call is in progress** `PATCH`, `DELETE` and a second call return
+  `409 order_call_in_progress`.
+- **`customer`, `amount`, `items` cannot be set to `null`** (422).
+- Do not send `customer` with `order_external_id` — it is the order's
+  customer; change it with `PATCH` on the order. Do not send
+  `order.previous_attempts` either: the server counts past calls.
+
+Errors: `404 order_not_found`, `409 order_call_in_progress`,
+`409 order_external_id_already_exists`.
 
 ## Idempotency-Key
 
