@@ -7220,9 +7220,10 @@ components:
             silencieusement re-routé vers un autre canal que celui demandé
             serait indétectable de votre côté.
 
-            Si aucune ligne n'est joignable au moment de la demande, la
-            réponse est `503` avec un en-tête `Retry-After` — aucun crédit
-            n'est débité et aucun appel n'est créé.
+            La demande est **acceptée et mise en file** même si aucune ligne
+            n'est joignable à cet instant : l'appel part dès que la
+            passerelle est de retour, dans les 48 heures. Passé ce délai,
+            il est abandonné et le compte rendu le dit.
         tone:
           type: string
           nullable: true
@@ -8228,6 +8229,15 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la
 politique de versioning décrite dans `docs/versioning.md`.
 
 ## [Unreleased]
+
+### Changed
+
+- **Une demande d'appel n'est plus refusée quand la ligne téléphonique
+  est momentanément injoignable.** Le `503 service_unavailable` avec
+  `Retry-After` qui pouvait répondre à `POST /v1/calls` sur le canal
+  téléphonique disparaît : la demande est acceptée et mise en file, et
+  l'appel part dès que la ligne revient, dans les 48 heures. Vous n'avez
+  plus à réessayer de votre côté.
 
 ### Added
 

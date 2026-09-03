@@ -4424,9 +4424,10 @@ components:
             silencieusement re-routé vers un autre canal que celui demandé
             serait indétectable de votre côté.
 
-            Si aucune ligne n'est joignable au moment de la demande, la
-            réponse est `503` avec un en-tête `Retry-After` — aucun crédit
-            n'est débité et aucun appel n'est créé.
+            La demande est **acceptée et mise en file** même si aucune ligne
+            n'est joignable à cet instant : l'appel part dès que la
+            passerelle est de retour, dans les 48 heures. Passé ce délai,
+            il est abandonné et le compte rendu le dit.
         tone:
           type: string
           nullable: true
