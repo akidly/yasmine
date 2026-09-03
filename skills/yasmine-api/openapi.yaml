@@ -1966,12 +1966,11 @@ components:
             request_id: a1b2c3d4
   schemas:
     # --- Boutiques -------------------------------------------------------
-    # ⚠️ Ces quatre schemas sont GENERES depuis les modeles Pydantic
-    # (`api/v1/schemas.py`) puis convertis au dialecte OpenAPI 3.0. Ne pas
-    # les editer a la main : la spec et le code divergeraient, exactement
-    # le defaut trouve le 2026-09-02 sur `inspection_before_payment`
-    # (declare dans la spec, absent du schema, donc 422 alors que la doc
-    # l'annoncait). Pour les regenerer : voir `scripts/gen_api_schemas.py`.
+    # ⚠️ Ces schemas sont GENERES depuis le contrat livre. Ne pas les
+    # editer a la main : la spec et le service divergeraient, exactement
+    # le defaut trouve le 2026-09-02 sur `inspection_before_payment`,
+    # annonce par la documentation mais refuse en 422. Un controle
+    # automatique compare desormais les deux et echoue en cas d'ecart.
     ShopCreate:
       additionalProperties: false
       description: 'Payload `POST /v1/shops`. Minimum : `external_id`, `name`, `country`.'
@@ -2718,9 +2717,13 @@ components:
         422. Meme semantique que sur les boutiques.
 
 
-        `external_id` n''est pas declare : l''envoyer produit un 422, ce qui evite
+        `external_id` est **accepte comme cle de confirmation** : un logiciel
 
-        de renommer par megarde un produit deja commande.'
+        qui pousse une mise a jour envoie naturellement l''identifiant du
+
+        produit qu''il modifie. Il doit valoir celui de l''URL — sinon 422 —
+
+        et n''est jamais ecrit : un produit deja commande ne se renomme pas.'
       properties:
         name:
           maxLength: 150
@@ -2807,6 +2810,15 @@ components:
 
             Sur un `PATCH`, la liste envoyee **remplace entierement** l''ancienne ; une variante
             qui n''y figure plus est supprimee. Les commandes deja passees ne bougent pas.'
+        external_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_.-]+$
+          type: string
+          nullable: true
+          description: 'Facultatif, et purement confirmatif : s''il est present il doit valoir
+            celui de l''URL. L''identifiant d''un produit ne se modifie pas.'
+          example: TSHIRT-01
       type: object
     ProductVariantOut:
       additionalProperties: false

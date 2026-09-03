@@ -162,6 +162,12 @@ politique de versioning décrite dans `docs/versioning.md`.
   écrit. S'il diffère de celui de l'URL, la requête est refusée — deux
   identifiants qui se contredisent ne se tranchent pas en silence.
 
+- **`PATCH /v1/shops/{id}/products/{id}` accepte lui aussi `external_id`
+  dans le corps.** Même refus, même correction : la valeur sert de clé de
+  confirmation, doit correspondre à celle de l'URL, et n'est jamais écrite.
+  L'identifiant d'un produit reste immuable — il porte l'historique des
+  commandes qui le référencent.
+
 ### Changed (BREAKING)
 
 - **`max_discount` d'une boutique plafonne à 10 000.** La borne était à
