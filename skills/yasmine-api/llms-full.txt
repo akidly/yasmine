@@ -4736,14 +4736,14 @@ components:
           nullable: true
           description: Numero WhatsApp, memes regles que `phone`.
         email:
-          maxLength: 100
+          maxLength: 50
           minLength: 1
           pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
           type: string
           nullable: true
           description: Email de contact. Normalise en minuscules.
         address:
-          maxLength: 250
+          maxLength: 200
           minLength: 1
           type: string
           nullable: true
@@ -4761,7 +4761,7 @@ components:
           type: string
           nullable: true
         sector:
-          maxLength: 50
+          maxLength: 80
           minLength: 1
           type: string
           nullable: true
@@ -4770,9 +4770,10 @@ components:
         has_physical_store:
           type: boolean
           nullable: true
-          description: Point de vente ou le client peut se presenter ? `true` oui, `false` vente
-            a distance uniquement, absent = non declare. Repond a « puis-je venir ? », question
-            que `address` ne tranche pas.
+          description: 'Point de vente ou le client peut se presenter ? `true` oui, `false` vente
+            a distance uniquement. Absent ou `null` vaut `false` : le troisieme etat « non declare
+            » a ete retire le 2026-09-03. Repond a « puis-je venir ? », question que `address`
+            ne tranche pas.'
         delivery_policy:
           maxLength: 250
           minLength: 1
@@ -4806,8 +4807,10 @@ components:
         inspection_before_payment:
           type: boolean
           nullable: true
+          description: Le client peut-il ouvrir le colis avant de payer ? Absent ou `null` vaut
+            `false` — le troisieme etat « non declare » a ete retire le 2026-09-03.
         faq_free:
-          maxLength: 1500
+          maxLength: 500
           minLength: 1
           type: string
           nullable: true
@@ -4818,15 +4821,17 @@ components:
           nullable: true
         max_discount:
           anyOf:
-          - maximum: 1000000.0
+          - maximum: 10000.0
             minimum: 0.0
             type: number
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
           - type: 'null'
-          description: Remise maximale que l'agent pourra accorder. Interpretee dans la devise
-            du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND).
+          description: 'Remise maximale que l''agent pourra accorder. Interpretee dans la devise
+            du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND). Plafond ramene de 1 000
+            000 a 10 000 le 2026-09-03 : au-dela, ce n''est plus une remise negociable au telephone.
+            La remise d''UNE commande garde son propre plafond, plus haut.'
           nullable: true
         delivery_companies:
           items:
@@ -4855,7 +4860,7 @@ components:
           type: string
           nullable: true
         agent_name:
-          maxLength: 40
+          maxLength: 20
           minLength: 1
           pattern: ^[A-Za-zÀ-ÿ؀-ۿ][A-Za-zÀ-ÿ؀-ۿ \.'\-]*$
           type: string
@@ -4899,11 +4904,17 @@ components:
         - champ a **`""`** -> 422
 
 
-        `external_id` n''est volontairement pas declare : l''envoyer produit un
+        `external_id` est **accepte mais jamais ecrit** : il identifie la
 
-        422 `extra_forbidden`, ce qui evite de renommer par megarde une
+        boutique, il ne se modifie pas. Un integrateur l''envoie naturellement
 
-        boutique qui porte des mois d''historique d''appels.'
+        pour dire de quelle boutique il parle — le refuser transformait ce
+
+        reflexe en 422 opaque (defaut vecu le 2026-09-03). S''il est fourni et
+
+        qu''il differe de celui de l''URL, la requete est refusee : deux
+
+        identifiants qui se contredisent ne se tranchent pas en silence.'
       properties:
         name:
           maxLength: 200
@@ -4956,14 +4967,14 @@ components:
           nullable: true
           description: Numero WhatsApp, memes regles que `phone`.
         email:
-          maxLength: 100
+          maxLength: 50
           minLength: 1
           pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
           type: string
           nullable: true
           description: Email de contact. Normalise en minuscules.
         address:
-          maxLength: 250
+          maxLength: 200
           minLength: 1
           type: string
           nullable: true
@@ -4981,7 +4992,7 @@ components:
           type: string
           nullable: true
         sector:
-          maxLength: 50
+          maxLength: 80
           minLength: 1
           type: string
           nullable: true
@@ -4990,9 +5001,10 @@ components:
         has_physical_store:
           type: boolean
           nullable: true
-          description: Point de vente ou le client peut se presenter ? `true` oui, `false` vente
-            a distance uniquement, absent = non declare. Repond a « puis-je venir ? », question
-            que `address` ne tranche pas.
+          description: 'Point de vente ou le client peut se presenter ? `true` oui, `false` vente
+            a distance uniquement. Absent ou `null` vaut `false` : le troisieme etat « non declare
+            » a ete retire le 2026-09-03. Repond a « puis-je venir ? », question que `address`
+            ne tranche pas.'
         delivery_policy:
           maxLength: 250
           minLength: 1
@@ -5026,8 +5038,10 @@ components:
         inspection_before_payment:
           type: boolean
           nullable: true
+          description: Le client peut-il ouvrir le colis avant de payer ? Absent ou `null` vaut
+            `false` — le troisieme etat « non declare » a ete retire le 2026-09-03.
         faq_free:
-          maxLength: 1500
+          maxLength: 500
           minLength: 1
           type: string
           nullable: true
@@ -5038,15 +5052,17 @@ components:
           nullable: true
         max_discount:
           anyOf:
-          - maximum: 1000000.0
+          - maximum: 10000.0
             minimum: 0.0
             type: number
           - pattern: ^[0-9]+([.][0-9]+)?$
             type: string
             example: '250.00'
           - type: 'null'
-          description: Remise maximale que l'agent pourra accorder. Interpretee dans la devise
-            du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND).
+          description: 'Remise maximale que l''agent pourra accorder. Interpretee dans la devise
+            du pays de la boutique (MA -> MAD, DZ -> DZD, TN -> TND). Plafond ramene de 1 000
+            000 a 10 000 le 2026-09-03 : au-dela, ce n''est plus une remise negociable au telephone.
+            La remise d''UNE commande garde son propre plafond, plus haut.'
           nullable: true
         delivery_companies:
           items:
@@ -5075,7 +5091,7 @@ components:
           type: string
           nullable: true
         agent_name:
-          maxLength: 40
+          maxLength: 20
           minLength: 1
           pattern: ^[A-Za-zÀ-ÿ؀-ۿ][A-Za-zÀ-ÿ؀-ۿ \.'\-]*$
           type: string
@@ -5091,6 +5107,13 @@ components:
           minimum: 30
           type: integer
           nullable: true
+        external_id:
+          type: string
+          nullable: true
+          description: 'Facultatif, et purement redondant : la boutique est deja designee par
+            l''URL. Accepte parce qu''un client l''envoie naturellement comme cle. **Jamais ecrit**
+            — l''identifiant est immuable. S''il differe de celui de l''URL, la requete est refusee
+            (422 `validation_error`).'
       type: object
     ShopOut:
       additionalProperties: false
@@ -5135,8 +5158,8 @@ components:
           type: string
           nullable: true
         has_physical_store:
+          default: false
           type: boolean
-          nullable: true
         delivery_policy:
           type: string
           nullable: true
@@ -5156,8 +5179,8 @@ components:
           type: string
           nullable: true
         inspection_before_payment:
+          default: false
           type: boolean
-          nullable: true
         faq_free:
           type: string
           nullable: true
@@ -5635,9 +5658,6 @@ components:
       - data
       - has_more
       type: object
-    # -----------------------------------------------------------------------
-    # Problem (RFC 7807)
-    # -----------------------------------------------------------------------
     Problem:
       type: object
       required: [type, title, status]
@@ -5772,7 +5792,7 @@ components:
           maxLength: 200
           description: Nom commercial affiché côté agent vocal + dashboard.
           examples: ["GlowArt Casa"]
-        sector: { type: string, nullable: true, maxLength: 50 }
+        sector: { type: string, nullable: true, maxLength: 80 }
         merchant_external_id:
           type: string
           nullable: true
@@ -5798,8 +5818,9 @@ components:
           nullable: true
           description: >-
             La boutique dispose-t-elle d'un point de vente physique où le
-            client peut se présenter ? Trois états : `true` oui, `false`
-            vente à distance uniquement, absent ou `null` non déclaré.
+            client peut se présenter ? `true` oui, `false` vente à distance
+            uniquement. Absent ou `null` vaut `false` — le troisième état
+            « non déclaré » a été retiré le 2026-09-03.
             **Distinct de `address`** : celle-ci dit *où* vous êtes,
             celui-ci dit si le client *peut venir* — un vendeur en ligne a
             souvent une adresse (entrepôt, domicile) qu'il ne souhaite pas
@@ -5844,7 +5865,7 @@ components:
         email:
           type: string
           nullable: true
-          maxLength: 100
+          maxLength: 50
           pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
           description: >-
             Email de contact de la boutique. **Renomme `shop_email_sav`
@@ -5856,7 +5877,7 @@ components:
           description: >-
             Numéro WhatsApp de la boutique. **Renomme `shop_whatsapp_sav`
             depuis le 2026-09-01.** L'ancien nom est refusé (422).
-        address: { type: string, nullable: true, maxLength: 250 }
+        address: { type: string, nullable: true, maxLength: 200 }
         customer_service_hours:
           type: string
           nullable: true
@@ -5898,14 +5919,14 @@ components:
           type: boolean
           nullable: true
           description: >-
-            Le client peut-il ouvrir le colis avant de payer ? Trois états :
-            `true` autorisé, `false` refusé, absent ou `null` non déclaré.
-            La distinction compte : sur `null` l'agent n'aborde pas le
-            sujet, alors qu'un `false` explicite lui permet de répondre.
+            Le client peut-il ouvrir le colis avant de payer ? `true`
+            autorisé, `false` refusé. Absent ou `null` vaut `false` — le
+            troisième état « non déclaré » a été retiré le 2026-09-03,
+            faute d'avoir jamais produit une différence de comportement.
             Enregistré sur la fiche boutique, pas encore exploité pendant
             l'appel — activation prévue.
         current_promotions: { type: string, nullable: true, maxLength: 250 }
-        faq_free: { type: string, nullable: true, maxLength: 1500 }
+        faq_free: { type: string, nullable: true, maxLength: 500 }
     OrderItem:
       type: object
       additionalProperties: false
@@ -7296,7 +7317,46 @@ politique de versioning décrite dans `docs/versioning.md`.
   l'appel**. Vous pouvez les renseigner dès maintenant pour préparer votre
   intégration ; leur activation suivra.
 
+### Fixed
+- **`PATCH /v1/shops/{external_id}` accepte désormais `external_id` dans le
+  corps.** Il était refusé par un `422 extra_forbidden`, alors qu'un client
+  l'envoie naturellement pour dire de quelle boutique il parle. Le refus était
+  d'autant plus déroutant que la valeur envoyée était la bonne.
+
+  Le champ reste **immuable** : il sert de clé de confirmation, il n'est jamais
+  écrit. S'il diffère de celui de l'URL, la requête est refusée — deux
+  identifiants qui se contredisent ne se tranchent pas en silence.
+
 ### Changed (BREAKING)
+
+- **`max_discount` d'une boutique plafonne à 10 000.** La borne était à
+  1 000 000, ce qui n'a pas de sens pour une remise que l'agent négocie de
+  vive voix. La remise d'**une commande** garde son propre plafond, plus
+  haut : c'est un autre champ, avec un autre usage.
+
+  Aucune boutique n'était concernée — la remise la plus élevée en
+  production valait 10.
+
+
+- **Cinq champs de boutique voient leur longueur maximale réduite.** Une
+  valeur plus longue renvoie désormais `422`.
+
+  | Champ | Avant | Après |
+  |---|---|---|
+  | `address` | 250 | 200 |
+  | `email` | 100 | 50 |
+  | `agent_name` | 40 | 20 |
+  | `faq_free` | 1500 | 500 |
+  | `customer_service_hours` | 100 | inchangé |
+
+  Ces bornes décrivent ce que l'agent doit pouvoir réciter au téléphone :
+  au-delà, le texte n'est plus dit, il est subi.
+
+  Aucune donnée déjà enregistrée n'est tronquée. Les valeurs stockées qui
+  dépassent restent lisibles et servies telles quelles — mais les renvoyer
+  à l'identique sera refusé. Une seule boutique était dans ce cas sur les
+  129 existantes, sur `faq_free`.
+
 
 - **`shop_info` : cinq champs renommés, un retiré.** Le préfixe `shop_`
   était redondant dans un objet déjà nommé `shop_info`, et la distinction
@@ -7339,6 +7399,24 @@ politique de versioning décrite dans `docs/versioning.md`.
   appels antérieurs conservent leur ancienne valeur.
 
 ### Changed
+
+- **`sector` accepte désormais 80 caractères** au lieu de 50. « Boutique de
+  cosmétique bio artisanale » tient dans 80, pas toujours dans 50. Élargir
+  ne casse rien : ce qui passait passe encore.
+
+
+- **`has_physical_store` et `inspection_before_payment` n'ont plus de
+  troisième état.** Ces deux booléens acceptaient `null` pour dire « non
+  déclaré », avec l'idée que l'agent éviterait alors le sujet. Cette
+  intention n'a jamais été implémentée : ni l'un ni l'autre n'a jamais été
+  transmis au modèle pendant un appel. Le troisième état ne coûtait donc que
+  de l'ambiguïté à la saisie, sans rien changer à ce que le client entend.
+
+  Les deux champs valent désormais `false` par défaut, et sont **toujours
+  renseignés en lecture** — un `GET /v1/shops/{id}` ne rend plus jamais
+  `null` pour eux. En écriture, rien ne casse : `null` reste accepté et vaut
+  `false`. Les boutiques déjà déclarées sans valeur passent à `false`.
+
 
 - **Le canal par défaut des appels est désormais le téléphone.** Une demande
   sans `call_params.channel` sort sur le réseau mobile du client, là où elle
@@ -7662,6 +7740,7 @@ politique de versioning décrite dans `docs/versioning.md`.
     (TTL recommandé : 24 h).
 
 ### Fixed
+
 
 - **Détail de commande désormais transmis intégralement à l'agent** : adresse
   de livraison, articles, mode et zone de livraison, montants (sous-total,

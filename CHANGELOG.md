@@ -152,7 +152,46 @@ politique de versioning décrite dans `docs/versioning.md`.
   l'appel**. Vous pouvez les renseigner dès maintenant pour préparer votre
   intégration ; leur activation suivra.
 
+### Fixed
+- **`PATCH /v1/shops/{external_id}` accepte désormais `external_id` dans le
+  corps.** Il était refusé par un `422 extra_forbidden`, alors qu'un client
+  l'envoie naturellement pour dire de quelle boutique il parle. Le refus était
+  d'autant plus déroutant que la valeur envoyée était la bonne.
+
+  Le champ reste **immuable** : il sert de clé de confirmation, il n'est jamais
+  écrit. S'il diffère de celui de l'URL, la requête est refusée — deux
+  identifiants qui se contredisent ne se tranchent pas en silence.
+
 ### Changed (BREAKING)
+
+- **`max_discount` d'une boutique plafonne à 10 000.** La borne était à
+  1 000 000, ce qui n'a pas de sens pour une remise que l'agent négocie de
+  vive voix. La remise d'**une commande** garde son propre plafond, plus
+  haut : c'est un autre champ, avec un autre usage.
+
+  Aucune boutique n'était concernée — la remise la plus élevée en
+  production valait 10.
+
+
+- **Cinq champs de boutique voient leur longueur maximale réduite.** Une
+  valeur plus longue renvoie désormais `422`.
+
+  | Champ | Avant | Après |
+  |---|---|---|
+  | `address` | 250 | 200 |
+  | `email` | 100 | 50 |
+  | `agent_name` | 40 | 20 |
+  | `faq_free` | 1500 | 500 |
+  | `customer_service_hours` | 100 | inchangé |
+
+  Ces bornes décrivent ce que l'agent doit pouvoir réciter au téléphone :
+  au-delà, le texte n'est plus dit, il est subi.
+
+  Aucune donnée déjà enregistrée n'est tronquée. Les valeurs stockées qui
+  dépassent restent lisibles et servies telles quelles — mais les renvoyer
+  à l'identique sera refusé. Une seule boutique était dans ce cas sur les
+  129 existantes, sur `faq_free`.
+
 
 - **`shop_info` : cinq champs renommés, un retiré.** Le préfixe `shop_`
   était redondant dans un objet déjà nommé `shop_info`, et la distinction
@@ -195,6 +234,24 @@ politique de versioning décrite dans `docs/versioning.md`.
   appels antérieurs conservent leur ancienne valeur.
 
 ### Changed
+
+- **`sector` accepte désormais 80 caractères** au lieu de 50. « Boutique de
+  cosmétique bio artisanale » tient dans 80, pas toujours dans 50. Élargir
+  ne casse rien : ce qui passait passe encore.
+
+
+- **`has_physical_store` et `inspection_before_payment` n'ont plus de
+  troisième état.** Ces deux booléens acceptaient `null` pour dire « non
+  déclaré », avec l'idée que l'agent éviterait alors le sujet. Cette
+  intention n'a jamais été implémentée : ni l'un ni l'autre n'a jamais été
+  transmis au modèle pendant un appel. Le troisième état ne coûtait donc que
+  de l'ambiguïté à la saisie, sans rien changer à ce que le client entend.
+
+  Les deux champs valent désormais `false` par défaut, et sont **toujours
+  renseignés en lecture** — un `GET /v1/shops/{id}` ne rend plus jamais
+  `null` pour eux. En écriture, rien ne casse : `null` reste accepté et vaut
+  `false`. Les boutiques déjà déclarées sans valeur passent à `false`.
+
 
 - **Le canal par défaut des appels est désormais le téléphone.** Une demande
   sans `call_params.channel` sort sur le réseau mobile du client, là où elle
@@ -518,6 +575,7 @@ politique de versioning décrite dans `docs/versioning.md`.
     (TTL recommandé : 24 h).
 
 ### Fixed
+
 
 - **Détail de commande désormais transmis intégralement à l'agent** : adresse
   de livraison, articles, mode et zone de livraison, montants (sous-total,
