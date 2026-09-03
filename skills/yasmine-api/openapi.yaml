@@ -1426,8 +1426,7 @@ paths:
                 value:
                   external_id: "SERUM-VITC"
                   name: "Sérum vitamine C"
-                  description: "Flacon 30 ml, concentration 15%"
-                  faq_free: "Ne pas utiliser sur peau lésée. Conserver à l'abri de la lumière."
+                  description: "Flacon 30 ml, concentration 15%. Ne pas utiliser sur peau lésée, conserver à l'abri de la lumière."
                   max_discount: "20.00"
                   return_policy: "Produit d'hygiène : aucun retour une fois ouvert"
                   current_promotions: "Deuxième flacon à -50%"
@@ -2634,13 +2633,6 @@ components:
           description: Lien vers la fiche produit sur votre site. Conserve pour vos propres besoins
             et vos exports ; jamais lu au telephone.
           example: https://boutique.example/produits/tshirt-blanc
-        faq_free:
-          maxLength: 500
-          minLength: 1
-          type: string
-          nullable: true
-          description: 'Connaissance libre sur le produit : composition, usage, contre-indications,
-            objections frequentes. L''agent s''en sert pour repondre — il ne la recite pas.'
         max_discount:
           anyOf:
           - maximum: 10000.0
@@ -2749,13 +2741,6 @@ components:
           description: Lien vers la fiche produit sur votre site. Conserve pour vos propres besoins
             et vos exports ; jamais lu au telephone.
           example: https://boutique.example/produits/tshirt-blanc
-        faq_free:
-          maxLength: 500
-          minLength: 1
-          type: string
-          nullable: true
-          description: 'Connaissance libre sur le produit : composition, usage, contre-indications,
-            objections frequentes. L''agent s''en sert pour repondre — il ne la recite pas.'
         max_discount:
           anyOf:
           - maximum: 10000.0
@@ -2880,9 +2865,6 @@ components:
           type: string
           nullable: true
         product_url:
-          type: string
-          nullable: true
-        faq_free:
           type: string
           nullable: true
         max_discount:

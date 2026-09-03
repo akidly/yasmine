@@ -178,6 +178,18 @@ politique de versioning décrite dans `docs/versioning.md`.
   Aucune boutique n'était concernée — la remise la plus élevée en
   production valait 10.
 
+- **`faq_free` disparaît de la fiche produit.** Le champ promettait une
+  connaissance libre « dont l'agent se sert pour répondre ». C'était vrai
+  de la boutique, jamais du produit : rien ne l'a jamais transmis au
+  modèle. Un marchand qui le remplissait obtenait l'inverse de ce qu'il
+  attendait.
+
+  **`description` joue ce rôle**, et le jouait déjà seule. Les fiches
+  existantes n'ont rien perdu : la valeur de `faq_free` y a été reversée,
+  à la suite de la description.
+
+  Le `faq_free` d'une **boutique** ne bouge pas — celui-là est bien lu.
+
 - **`max_discount` d'un produit plafonne lui aussi à 10 000.** Il
   acceptait 1 000 000 : deux plafonds différents pour une même notion à
   deux niveaux — le produit ne fait que surcharger sa boutique — sans

@@ -227,8 +227,7 @@ curl -X PATCH "$BASE/v1/shops/shop-4471/products/SERUM-VITC" \
   -d '{
     "max_discount": "20.00",
     "return_policy": "Produit d’hygiène : aucun retour une fois ouvert",
-    "current_promotions": "Deuxième flacon à -50%",
-    "faq_free": "Ne pas utiliser sur peau lésée. Conserver à l’abri de la lumière."
+    "current_promotions": "Deuxième flacon à -50%"
   }'
 ```
 
@@ -237,7 +236,7 @@ curl -X PATCH "$BASE/v1/shops/shop-4471/products/SERUM-VITC" \
 | `return_policy` | **Remplace** celle de la boutique pour ce produit |
 | `current_promotions` | **S'ajoute** à celle de la boutique — les deux sont vraies |
 | `max_discount` | Sur une commande à plusieurs produits, c'est **la plus haute** qui vaut. Une valeur à `0` ne bloque rien : elle dit seulement que ce produit-là n'apporte pas de marge |
-| `faq_free` | Sert à répondre aux questions, n'est jamais récité d'office |
+| `description` | Sert à répondre aux questions sur l'article, n'est jamais récitée d'office |
 
 ### Modifier les déclinaisons
 
