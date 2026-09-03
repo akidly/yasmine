@@ -379,6 +379,7 @@ curl -X POST "$BASE/v1/shops/shop-4471/orders" \
     "customer": { "name": "Ahmed Bennani", "phone_number": "+212612345678" },
     "amount": "487.00",
     "delivery_address": "12 rue des Orangers, Casablanca",
+    "call_hours": "Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00",
     "items": [
       { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 },
       { "product_external_id": "SERUM-VITC", "quantity": 1 }
@@ -388,7 +389,16 @@ curl -X POST "$BASE/v1/shops/shop-4471/orders" \
 
 Les articles sont **figés à la déclaration** : ce que le catalogue dit à ce
 moment-là — nom, prix, variantes — est copié dans la commande, et c'est
-cette copie que chaque appel lira. Une ligne décrite sur place avec `name`
+cette copie que chaque appel lira.
+
+`call_hours` est la **plage d'appel** : les créneaux pendant lesquels ce
+client peut être appelé, au format des horaires OpenStreetMap — jours en
+anglais abrégés, heures sur 24 h. Ici du lundi au vendredi matin et
+après-midi, le samedi après-midi, jamais le dimanche. Jamais avant 9 h ni
+après 21 h : une plage qui en sort est refusée. Absente, c'est celle de la
+boutique (`call_hours` sur `POST /v1/shops`) qui vaut, sinon tous les
+jours de 9 h à 21 h. Un appel lancé hors plage est accepté et part à la
+prochaine ouverture. Une ligne décrite sur place avec `name`
 reste valide (frais de port, cadeau, article sur mesure). La réponse porte
 `order_status` (`PENDING` tant qu'aucun appel n'a abouti), la liste `calls`
 (vide pour l'instant) et `call_in_progress`.

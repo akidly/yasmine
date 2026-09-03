@@ -830,6 +830,7 @@ curl -X POST "$BASE/v1/shops/shop-4471/orders" \
     "customer": { "name": "Ahmed Bennani", "phone_number": "+212612345678" },
     "amount": "487.00",
     "delivery_address": "12 rue des Orangers, Casablanca",
+    "call_hours": "Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00",
     "items": [
       { "product_external_id": "TSHIRT-BLANC", "variant_external_id": "TSH-XL", "quantity": 1 },
       { "product_external_id": "SERUM-VITC", "quantity": 1 }
@@ -839,7 +840,16 @@ curl -X POST "$BASE/v1/shops/shop-4471/orders" \
 
 Les articles sont **figés à la déclaration** : ce que le catalogue dit à ce
 moment-là — nom, prix, variantes — est copié dans la commande, et c'est
-cette copie que chaque appel lira. Une ligne décrite sur place avec `name`
+cette copie que chaque appel lira.
+
+`call_hours` est la **plage d'appel** : les créneaux pendant lesquels ce
+client peut être appelé, au format des horaires OpenStreetMap — jours en
+anglais abrégés, heures sur 24 h. Ici du lundi au vendredi matin et
+après-midi, le samedi après-midi, jamais le dimanche. Jamais avant 9 h ni
+après 21 h : une plage qui en sort est refusée. Absente, c'est celle de la
+boutique (`call_hours` sur `POST /v1/shops`) qui vaut, sinon tous les
+jours de 9 h à 21 h. Un appel lancé hors plage est accepté et part à la
+prochaine ouverture. Une ligne décrite sur place avec `name`
 reste valide (frais de port, cadeau, article sur mesure). La réponse porte
 `order_status` (`PENDING` tant qu'aucun appel n'a abouti), la liste `calls`
 (vide pour l'instant) et `call_in_progress`.
@@ -2924,6 +2934,12 @@ paths:
         la commande. C'est la forme à privilégier : relancer le client se
         fait avec la même référence, et « toutes les commandes de ce
         produit » a une réponse.
+
+        **L'appel part dans la plage d'appel.** Celle de la commande, sinon
+        celle de la boutique, sinon tous les jours de 9 h à 21 h dans le
+        fuseau de la boutique. Une demande faite hors plage est acceptée
+        et part à la prochaine ouverture ; une relance y est recalée de la
+        même façon. Aucune plage ne peut sortir de 9 h – 21 h.
 
         **Idempotency-Key obligatoire** : header `Idempotency-Key`
         requis (1-255 chars, UUID v4 recommandé). Scope par reseller, TTL
@@ -5290,6 +5306,19 @@ components:
           minimum: 30
           type: integer
           nullable: true
+        call_hours:
+          maxLength: 200
+          type: string
+          nullable: true
+          description: 'Plage d''appel : les creneaux pendant lesquels le client peut etre appele,
+            au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
+            plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
+            Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
+            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
+            Vaut pour toutes les commandes de la boutique qui n''en declarent pas une propre.
+            Absente : tous les jours de 9 h a 21 h.'
+          example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           description: Identifiant de la boutique dans VOTRE systeme. Sert d'adresse dans l'URL,
             d'ou le jeu de caracteres restreint. **Immuable** apres creation.
@@ -5521,6 +5550,19 @@ components:
           minimum: 30
           type: integer
           nullable: true
+        call_hours:
+          maxLength: 200
+          type: string
+          nullable: true
+          description: 'Plage d''appel : les creneaux pendant lesquels le client peut etre appele,
+            au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
+            plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
+            Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
+            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
+            Vaut pour toutes les commandes de la boutique qui n''en declarent pas une propre.
+            Absente : tous les jours de 9 h a 21 h.'
+          example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           type: string
           nullable: true
@@ -5630,6 +5672,9 @@ components:
           nullable: true
         max_call_duration_seconds:
           type: integer
+          nullable: true
+        call_hours:
+          type: string
           nullable: true
         status:
           description: Calcule depuis `archived_at`.
@@ -6237,6 +6282,19 @@ components:
           type: object
           nullable: true
           description: Metadata libre du reseller. Max 2 KB serialise JSON.
+        call_hours:
+          maxLength: 200
+          type: string
+          nullable: true
+          description: 'Plage d''appel : les creneaux pendant lesquels le client peut etre appele,
+            au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
+            plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
+            Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
+            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
+            Absente : la plage de la boutique, sinon tous les jours de 9 h a 21 h. `null` sur
+            un PATCH revient a celle de la boutique.'
+          example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           description: Identifiant de la commande dans VOTRE systeme, unique par boutique. Sert
             d'adresse dans l'URL et de reference pour lancer l'appel. **Immuable** apres creation.
@@ -6414,6 +6472,19 @@ components:
           type: object
           nullable: true
           description: Metadata libre du reseller. Max 2 KB serialise JSON.
+        call_hours:
+          maxLength: 200
+          type: string
+          nullable: true
+          description: 'Plage d''appel : les creneaux pendant lesquels le client peut etre appele,
+            au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
+            plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
+            Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
+            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
+            Absente : la plage de la boutique, sinon tous les jours de 9 h a 21 h. `null` sur
+            un PATCH revient a celle de la boutique.'
+          example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           maxLength: 128
           minLength: 1
@@ -6523,6 +6594,10 @@ components:
           additionalProperties: true
           type: object
           nullable: true
+        call_hours:
+          type: string
+          nullable: true
+          description: La plage propre a la commande, ou `null` si elle suit celle de la boutique.
         order_status:
           description: 'Ou en est la commande : `PENDING` avant tout appel abouti, puis `CONFIRMED`,
             `CANCELLED`, `UNREACHABLE`… selon le resultat de l''appel. **Jamais modifiable a la
@@ -7188,6 +7263,19 @@ components:
           nullable: true
           enum: [web, pos, ads, other]
         promo_code: { type: string, nullable: true, maxLength: 50 }
+        call_hours:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: |
+            Plage d'appel de cette commande, au format des horaires
+            OpenStreetMap : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00`.
+            **Jamais avant 9 h ni après 21 h**, dans le fuseau de la
+            boutique — une plage qui en sort est refusée (422). Absente : la
+            plage de la boutique, sinon tous les jours de 9 h à 21 h. Un
+            appel demandé hors plage est accepté et part à la prochaine
+            ouverture.
+          example: "Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00"
     CallParamsInput:
       type: object
       required: [purpose]
@@ -8239,6 +8327,18 @@ politique de versioning décrite dans `docs/versioning.md`.
   côté.
 
 ### Added
+
+- **La plage d'appel : `call_hours` sur la boutique et sur la commande.**
+  Les créneaux pendant lesquels un client peut être appelé, au format des
+  horaires OpenStreetMap : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00`.
+  La commande l'emporte sur la boutique ; sans rien, tous les jours de
+  9 h à 21 h. **Jamais avant 9 h ni après 21 h**, dans le fuseau de la
+  boutique : une plage qui en sort est refusée (`422 validation_error`).
+  Un appel demandé hors plage est accepté et part à la prochaine
+  ouverture ; une relance y est recalée. Le champ existe sur
+  `POST /v1/shops`, `POST /v1/shops/{id}/orders`, leurs `PATCH` et leurs
+  lectures, et sur `order.call_hours` d'une demande d'appel décrite sur
+  place.
 
 - **`call_params.channel` est enfin documenté.** Le champ existait depuis
   la livraison du canal téléphonique, mais n'apparaissait dans aucune

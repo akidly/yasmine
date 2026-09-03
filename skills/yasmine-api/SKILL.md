@@ -128,6 +128,14 @@ order. Prefer this form over describing the order inline.
 Errors: `404 order_not_found`, `409 order_call_in_progress`,
 `409 order_external_id_already_exists`.
 
+**Calling hours.** `call_hours` on the shop (default) and on the order
+(override), in OpenStreetMap opening-hours syntax:
+`Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00`. Never before 09:00 nor
+after 21:00 in the shop's timezone — anything outside is rejected (422).
+Without any, every day 09:00-21:00. A call requested outside the window
+is accepted and dials at the next opening; retries are re-scheduled the
+same way.
+
 ## Idempotency-Key
 
 `POST /v1/calls` requires the header `Idempotency-Key`. Use a fresh UUID v4 per logical request.

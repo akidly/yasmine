@@ -19,6 +19,18 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Added
 
+- **La plage d'appel : `call_hours` sur la boutique et sur la commande.**
+  Les créneaux pendant lesquels un client peut être appelé, au format des
+  horaires OpenStreetMap : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00`.
+  La commande l'emporte sur la boutique ; sans rien, tous les jours de
+  9 h à 21 h. **Jamais avant 9 h ni après 21 h**, dans le fuseau de la
+  boutique : une plage qui en sort est refusée (`422 validation_error`).
+  Un appel demandé hors plage est accepté et part à la prochaine
+  ouverture ; une relance y est recalée. Le champ existe sur
+  `POST /v1/shops`, `POST /v1/shops/{id}/orders`, leurs `PATCH` et leurs
+  lectures, et sur `order.call_hours` d'une demande d'appel décrite sur
+  place.
+
 - **`call_params.channel` est enfin documenté.** Le champ existait depuis
   la livraison du canal téléphonique, mais n'apparaissait dans aucune
   documentation : personne ne pouvait le découvrir en lisant la spec. Deux
