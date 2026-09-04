@@ -1483,193 +1483,6 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-    get:
-      operationId: listProducts
-      summary: Lister les produits d'une boutique
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "600/minute"
-      description: |
-        Liste paginée du catalogue d'une boutique, du produit le plus
-        récent au plus ancien. Chaque fiche est renvoyée complète,
-        variantes comprises.
-
-        **Pagination** : curseur opaque, valable 24 h. Passez le
-        `next_cursor` de la réponse en `?cursor=` pour la page suivante.
-        Défaut 50 résultats, maximum 200.
-
-        **`?status=`** vaut `active` par défaut : les produits archivés sont
-        masqués. `archived` ne montre qu'eux, `all` ne filtre pas.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - in: query
-          name: cursor
-          schema: { type: string }
-          description: Curseur de la page suivante, tel que renvoyé par `next_cursor`.
-        - in: query
-          name: limit
-          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [active, archived, all]
-            default: active
-      responses:
-        "200":
-          description: Page de résultats.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PaginatedProducts" }
-        "400":
-          description: |
-            Curseur malformé, altéré ou expiré (`invalid_cursor`,
-            `cursor_expired`). Refaire la première requête sans `cursor`.
-          content:
-            application/problem+json:
-              schema: { $ref: "#/components/schemas/Problem" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ShopNotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-  /v1/shops/{shop_external_id}/products/{product_external_id}:
-    get:
-      operationId: getProduct
-      summary: Consulter un produit
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "600/minute"
-      description: |
-        Renvoie la fiche complète d'un produit, variantes comprises,
-        adressée par **vos** identifiants.
-
-        `unit_price` n'est présent que si le produit n'a qu'une variante ;
-        sinon, les prix vivent dans `variants`, un par déclinaison.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - $ref: "#/components/parameters/ProductExternalId"
-      responses:
-        "200":
-          description: Fiche du produit.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProductOut" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ProductNotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-    patch:
-      operationId: updateProduct
-      summary: Modifier un produit
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "120/minute"
-      description: |
-        Modification partielle. **Trois cas à distinguer :**
-
-        | Dans le corps | Effet |
-        |---|---|
-        | Champ **absent** | Inchangé |
-        | Champ à **`null`** | **Effacé** |
-        | Champ à **`""`** | Rejeté (422) |
-
-        ⚠️ **`variants` ne se modifie pas ligne à ligne : la liste envoyée
-        remplace entièrement l'ancienne.** Une variante absente de la
-        nouvelle liste est supprimée du catalogue. Pour n'en changer qu'une,
-        relisez le produit, modifiez l'entrée, renvoyez la liste complète.
-        Les commandes déjà passées ne bougent pas — elles ont retenu ce qui
-        leur a été dit au moment de l'appel.
-
-        Ne pas envoyer `variants` du tout les laisse intactes : renommer un
-        produit n'efface pas ses déclinaisons.
-
-        **`unit_price` seul** ne vaut que pour un produit à variante unique.
-        Sur un produit qui en a plusieurs, il est ambigu et refusé (422) :
-        c'est dans `variants` que le prix se pose. **`unit_price: null` est
-        refusé** dans tous les cas : un prix s'édite, il ne s'efface pas.
-
-        **`external_id` ne peut pas être modifié** — il porte l'historique
-        des commandes du produit. L'envoyer produit un 422.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - $ref: "#/components/parameters/ProductExternalId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ProductPatch" }
-            examples:
-              fiche:
-                summary: Deux champs modifiés, un effacé
-                value:
-                  description: "Coton bio 180g, coupe droite, col rond"
-                  max_discount: "15.00"
-                  current_promotions: null
-              prix_simple:
-                summary: Nouveau prix d'un produit sans déclinaison
-                value:
-                  unit_price: "159.00"
-              variantes:
-                summary: La liste complète, une taille en moins
-                value:
-                  variants:
-                    - external_id: "TSH-M"
-                      options: { Taille: "M" }
-                      unit_price: "149.00"
-                    - external_id: "TSH-XL"
-                      options: { Taille: "XL" }
-                      unit_price: "169.00"
-      responses:
-        "200":
-          description: Fiche mise à jour.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProductOut" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ProductNotFound" }
-        "422":
-          description: |
-            Payload invalide (`validation_error`) : chaîne vide, champ
-            inconnu, `external_id` fourni, `unit_price` sur un produit à
-            plusieurs variantes, ou liste de variantes incohérente.
-          content:
-            application/problem+json:
-              schema: { $ref: "#/components/schemas/Problem" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-    delete:
-      operationId: archiveProduct
-      summary: Archiver un produit
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "120/minute"
-      description: |
-        **Le produit n'est pas supprimé, il est archivé.** Il disparaît du
-        catalogue par défaut et ne peut plus être commandé, mais les appels
-        qui l'ont mentionné restent intacts et consultables.
-
-        Pour le retrouver : `GET /v1/shops/{shop_external_id}/products?status=archived`.
-
-        Une commande qui le référence après coup est refusée
-        (`order_item_unknown_product`) : mieux vaut un appel qui ne part pas
-        qu'un appel qui annonce au client un article retiré de la vente.
-
-        Archiver un produit déjà archivé renvoie un 404 — indistinguable
-        d'un produit inexistant.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - $ref: "#/components/parameters/ProductExternalId"
-      responses:
-        "204":
-          description: Produit archivé.
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ProductNotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
   /healthz:
     get:
       operationId: healthz
@@ -1798,6 +1611,199 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /v1/products:
+    get:
+      operationId: listProducts
+      summary: Lister les produits d'une boutique
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Liste paginée du catalogue d'une boutique, du produit le plus
+        récent au plus ancien. Chaque fiche est renvoyée complète,
+        variantes comprises.
+
+        **Pagination** : curseur opaque, valable 24 h. Passez le
+        `next_cursor` de la réponse en `?cursor=` pour la page suivante.
+        Défaut 50 résultats, maximum 200.
+
+        **`?status=`** vaut `active` par défaut : les produits archivés sont
+        masqués. `archived` ne montre qu'eux, `all` ne filtre pas.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalIdFiltre"
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Curseur de la page suivante, tel que renvoyé par `next_cursor`.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
+      responses:
+        "200":
+          description: Page de résultats.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedProducts" }
+        "400":
+          description: |
+            Curseur malformé, altéré ou expiré (`invalid_cursor`,
+            `cursor_expired`). Refaire la première requête sans `cursor`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/products/{product_external_id}:
+    get:
+      operationId: getProduct
+      summary: Consulter un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Renvoie la fiche complète d'un produit, variantes comprises,
+        adressée par **vos** identifiants.
+
+        `unit_price` n'est présent que si le produit n'a qu'une variante ;
+        sinon, les prix vivent dans `variants`, un par déclinaison.
+      parameters:
+        - $ref: "#/components/parameters/ProductExternalId"
+      responses:
+        "200":
+          description: Fiche du produit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    patch:
+      operationId: updateProduct
+      summary: Modifier un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Modification partielle. **Trois cas à distinguer :**
+
+        | Dans le corps | Effet |
+        |---|---|
+        | Champ **absent** | Inchangé |
+        | Champ à **`null`** | **Effacé** |
+        | Champ à **`""`** | Rejeté (422) |
+
+        ⚠️ **`variants` ne se modifie pas ligne à ligne : la liste envoyée
+        remplace entièrement l'ancienne.** Une variante absente de la
+        nouvelle liste est supprimée du catalogue. Pour n'en changer qu'une,
+        relisez le produit, modifiez l'entrée, renvoyez la liste complète.
+        Les commandes déjà passées ne bougent pas — elles ont retenu ce qui
+        leur a été dit au moment de l'appel.
+
+        Ne pas envoyer `variants` du tout les laisse intactes : renommer un
+        produit n'efface pas ses déclinaisons.
+
+        `unit_price` à la racine ne vaut que pour un produit qui n'a qu'une
+        variante : avec plusieurs, on ne saurait pas laquelle reprendre et
+        la demande est refusée. Pour **ramener un produit à variantes vers
+        un produit simple**, envoyer `variants: []` avec `unit_price` : la
+        liste vide remplace toutes les variantes, et la variante unique
+        renaît avec ce prix.
+
+        **`unit_price` seul** ne vaut que pour un produit à variante unique.
+        Sur un produit qui en a plusieurs, il est ambigu et refusé (422) :
+        c'est dans `variants` que le prix se pose. **`unit_price: null` est
+        refusé** dans tous les cas : un prix s'édite, il ne s'efface pas.
+
+        **`external_id` ne peut pas être modifié** — il porte l'historique
+        des commandes du produit. L'envoyer produit un 422.
+      parameters:
+        - $ref: "#/components/parameters/ProductExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductPatch" }
+            examples:
+              fiche:
+                summary: Deux champs modifiés, un effacé
+                value:
+                  description: "Coton bio 180g, coupe droite, col rond"
+                  max_discount: "15.00"
+                  current_promotions: null
+              prix_simple:
+                summary: Nouveau prix d'un produit sans déclinaison
+                value:
+                  unit_price: "159.00"
+              variantes:
+                summary: La liste complète, une taille en moins
+                value:
+                  variants:
+                    - external_id: "TSH-M"
+                      options: { Taille: "M" }
+                      unit_price: "149.00"
+                    - external_id: "TSH-XL"
+                      options: { Taille: "XL" }
+                      unit_price: "169.00"
+      responses:
+        "200":
+          description: Fiche mise à jour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : chaîne vide, champ
+            inconnu, `external_id` fourni, `unit_price` sur un produit à
+            plusieurs variantes, ou liste de variantes incohérente.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    delete:
+      operationId: archiveProduct
+      summary: Archiver un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        **Le produit n'est pas supprimé, il est archivé.** Il disparaît du
+        catalogue par défaut et ne peut plus être commandé, mais les appels
+        qui l'ont mentionné restent intacts et consultables.
+
+        Pour le retrouver : `GET /v1/shops/{shop_external_id}/products?status=archived`.
+
+        Une commande qui le référence après coup est refusée
+        (`order_item_unknown_product`) : mieux vaut un appel qui ne part pas
+        qu'un appel qui annonce au client un article retiré de la vente.
+
+        Archiver un produit déjà archivé renvoie un 404 — indistinguable
+        d'un produit inexistant.
+      parameters:
+        - $ref: "#/components/parameters/ProductExternalId"
+      responses:
+        "204":
+          description: Produit archivé.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/orders:
     get:
       operationId: listOrders
       summary: Lister les commandes d'une boutique
@@ -1818,7 +1824,7 @@ paths:
         **`?order_status=`** ne garde que les commandes dans cet état
         (`PENDING`, `CONFIRMED`…).
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/ShopExternalIdFiltre"
         - in: query
           name: cursor
           schema: { type: string }
@@ -1854,7 +1860,7 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /v1/shops/{shop_external_id}/orders/{order_external_id}:
+  /v1/orders/{order_external_id}:
     get:
       operationId: getOrder
       summary: Consulter une commande
@@ -1868,7 +1874,6 @@ paths:
         dit si un appel n'est pas terminé — la commande ne peut alors ni
         être modifiée, ni archivée, ni rappelée.
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
         - $ref: "#/components/parameters/OrderExternalId"
       responses:
         "200":
@@ -1910,7 +1915,6 @@ paths:
         **`external_id` ne peut pas être modifié** — il porte l'historique
         des appels. L'envoyer avec une autre valeur produit un 422.
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
         - $ref: "#/components/parameters/OrderExternalId"
       requestBody:
         required: true
@@ -1972,7 +1976,6 @@ paths:
 
         **Refusé pendant un appel en cours** (`409 order_call_in_progress`).
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
         - $ref: "#/components/parameters/OrderExternalId"
       responses:
         "204":
@@ -2000,6 +2003,17 @@ components:
         Yasmine (bootstrap). Self-service `POST /v1/me/api-keys` à venir
         en M4.
   parameters:
+    ShopExternalIdFiltre:
+      in: query
+      name: shop_external_id
+      required: false
+      schema: { type: string, maxLength: 128, pattern: "^[a-zA-Z0-9_.-]+$" }
+      description: |
+        Restreint la liste à une boutique. Absent, la liste couvre tout
+        votre compte — un revendeur multi-boutiques n'a plus à les
+        interroger une par une, ni à fusionner et repaginer lui-même.
+        Une boutique inconnue répond `404 shop_not_found`.
+      example: "shop-4471"
     ShopExternalId:
       in: path
       name: shop_external_id
@@ -3068,8 +3082,9 @@ components:
             Sur un `PATCH`, la liste envoyee **remplace entierement** l''ancienne ; une variante
             qui n''y figure plus est supprimee. Les commandes deja passees ne bougent pas.'
         external_id:
-          description: Identifiant du produit dans VOTRE systeme. Sert d'adresse dans l'URL, d'ou
-            le jeu de caracteres restreint. **Immuable** apres creation.
+          description: Identifiant du produit dans VOTRE systeme, **unique sur tout votre
+            compte** — toutes boutiques confondues. Sert d'adresse dans l'URL, d'ou le jeu
+            de caracteres restreint. **Immuable** apres creation.
           maxLength: 128
           minLength: 1
           pattern: ^[a-zA-Z0-9_.-]+$
@@ -3490,8 +3505,10 @@ components:
             un PATCH revient a celle de la boutique.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
-          description: Identifiant de la commande dans VOTRE systeme, unique par boutique. Sert
-            d'adresse dans l'URL et de reference pour lancer l'appel. **Immuable** apres creation.
+          description: Identifiant de la commande dans VOTRE systeme, **unique sur tout votre
+            compte** — toutes boutiques confondues, pour qu'une reference designe une commande
+            et une seule. Sert d'adresse dans l'URL et de reference pour lancer l'appel.
+            **Immuable** apres creation.
           maxLength: 128
           minLength: 1
           pattern: ^[a-zA-Z0-9_.-]+$

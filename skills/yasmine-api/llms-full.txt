@@ -672,7 +672,7 @@ Trois champs du produit l'emportent sur ceux de la boutique, quand ils
 sont renseignés :
 
 ```bash
-curl -X PATCH "$BASE/v1/shops/shop-4471/products/SERUM-VITC" \
+curl -X PATCH "$BASE/v1/products/SERUM-VITC" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -d '{
@@ -696,7 +696,7 @@ nouvelle liste est supprimée du catalogue.
 
 ```bash
 # Retirer la taille S : on renvoie la liste sans elle.
-curl -X PATCH "$BASE/v1/shops/shop-4471/products/TSHIRT-BLANC" \
+curl -X PATCH "$BASE/v1/products/TSHIRT-BLANC" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -d '{
@@ -717,10 +717,10 @@ dit au client au moment de l'appel.
 ### Lister et archiver
 
 ```bash
-curl "$BASE/v1/shops/shop-4471/products?limit=50" \
+curl "$BASE/v1/products?limit=50&shop_external_id=shop-4471" \
   -H "Authorization: Bearer $YK"
 
-curl -X DELETE "$BASE/v1/shops/shop-4471/products/TSHIRT-BLANC" \
+curl -X DELETE "$BASE/v1/products/TSHIRT-BLANC" \
   -H "Authorization: Bearer $YK"
 # 204 No Content
 ```
@@ -880,13 +880,13 @@ refusé (`409 order_call_in_progress`).
 ### Relire, corriger, archiver
 
 ```bash
-curl "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+curl "$BASE/v1/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
 
-curl -X PATCH "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" \
+curl -X PATCH "$BASE/v1/orders/CMD-2026-8891" \
   -H "Authorization: Bearer $YK" -H "Content-Type: application/json" \
   -d '{ "delivery_address": "14 rue des Orangers, Casablanca", "amount": "450.00" }'
 
-curl -X DELETE "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+curl -X DELETE "$BASE/v1/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
 ```
 
 Le `PATCH` suit la règle des produits : absent = inchangé, `null` = effacé,
@@ -2060,6 +2060,8 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 ```json
 {
   "call_id": "d5a97d2b-...",
+  "shop_external_id": "BOUTIQUE-01",
+  "order_external_id": "CMD-2026-8891",
   "result": "confirmed",
   "result_detail": "modified",
   "customer_mood": "positive",
@@ -2074,6 +2076,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "language": "ar"
 }
 ```
+- `shop_external_id` / `order_external_id` : **vos** références, celles que vous nous avez données en déclarant la boutique et la commande. Elles vous évitent de tenir une table de correspondance avec nos identifiants : vous retrouvez la commande concernée sans rien avoir eu à mémoriser au lancement. `call_id` reste utile pour l'enregistrement et pour dédupliquer un retry.
 - `result` parmi `confirmed` / `cancelled` / `requires_action`. `confirmed` = la commande est confirmée (à facturer normalement). `cancelled` = la commande est annulée. `requires_action` = aucune décision automatique, le marchand traite manuellement.
 - `result_detail` : nuance fine. Slugs courants : `modified` (commande confirmée avec une modification — cas type « oui mais en bleu », à facturer comme confirmée), `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`. `null` quand `result` est `confirmed` ou `cancelled` sans nuance particulière.
 - `customer_mood` parmi `positive` / `neutral` / `negative` / `frustrated` / `unclear`, ou `null` si non détectable. `unclear` signale que l'audio était globalement incompréhensible (corrélé généralement avec `result_detail=unclear`).
@@ -2093,6 +2096,8 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 ```json
 {
   "call_id": "d5a97d2b-...",
+  "shop_external_id": "BOUTIQUE-01",
+  "order_external_id": "CMD-2026-8891",
   "cancelled_at": "2026-04-20T14:00:16.123456Z",
   "cancelled_state": "connected",
   "billed_seconds": 25,
@@ -2101,6 +2106,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "language": "fr"
 }
 ```
+- `shop_external_id` / `order_external_id` : vos références, mêmes sémantiques que pour `call.ended`.
 - `cancelled_state` : `call_status` au moment où le cancel a été traité (`not_started`/`dialing`/`ringing`/`connected`). Permet au reseller de savoir à quel stade l'appel a été coupé.
 - `billed_seconds` : 0 si cancel avant `connected` ; sinon `ceil(now - accepted_at)` avec plancher 10 s.
 - `country` / `language` (depuis le Lot 2 chantier pays × langue) : mêmes sémantiques que pour `call.ended`. Absents sur les cancels d'appels antérieurs au Lot 2.
@@ -2113,11 +2119,14 @@ Transition `call_status → failed`. Échec infra côté plateforme ou côté cl
 ```json
 {
   "call_id": "d5a97d2b-...",
+  "shop_external_id": "BOUTIQUE-01",
+  "order_external_id": "CMD-2026-8891",
   "failure_reason": "meta_400:131030",
   "country": "FR",
   "language": "fr"
 }
 ```
+- `shop_external_id` / `order_external_id` : vos références, mêmes sémantiques que pour `call.ended`.
 - `failure_reason` parmi (non exhaustif) :
   - `client_rejected` : client a refusé avant d'accepter l'appel (webhook plateforme).
   - `meta_<status>[:<code>]` : erreur côté plateforme avec code spécifique (ex. `meta_400:131030`, `meta_500`). **Phase 3 (2026-04-26)** : le code numérique est désormais propagé systématiquement quand disponible — auparavant le slug était `meta_<status>` seul, le code étant uniquement visible en logs internes.
@@ -2274,13 +2283,13 @@ Certains `type` ajoutent des champs dédiés :
 | `idempotency_key_empty` | 400 | Header `Idempotency-Key` présent mais vide. Doit faire au moins 1 char. |
 | `idempotency_key_too_long` | 400 | Header `Idempotency-Key` > 255 chars. Limite stricte côté serveur. |
 | `idempotency_key_conflict` | 409 | Même `Idempotency-Key` réutilisée avec un body différent dans la fenêtre de 24 h. Générer une nouvelle clé pour une requête différente. Le body original n'est jamais ré-exposé. |
-| `order_external_id_already_exists` | 409 | `POST /v1/shops/{id}/orders`, ou `POST /v1/calls` avec `order.external_id`, sur un identifiant déjà utilisé dans cette boutique. La création est stricte. Pour rappeler le client sur la même commande : `POST /v1/calls` avec `order_external_id` — les appels s'empilent sur la commande. Pour une commande distincte, une `external_id` différente. |
+| `order_external_id_already_exists` | 409 | `POST /v1/shops/{id}/orders`, ou `POST /v1/calls` avec `order.external_id`, sur un identifiant déjà utilisé **sur votre compte** — l'unicité vaut toutes boutiques confondues. La création est stricte. Pour rappeler le client sur la même commande : `POST /v1/calls` avec `order_external_id` — les appels s'empilent sur la commande. Pour une commande distincte, une `external_id` différente. |
 | `order_item_unknown_product` | 422 | `POST /v1/calls` : une ligne référence un produit ou une variante qui n'existe pas dans la boutique de l'appel. Le déclarer, ou décrire l'article sur place — une ligne avec `name` et `unit_price` reste valide, un produit non déclaré ne doit jamais bloquer un appel. |
 | `order_item_variant_required` | 422 | `POST /v1/calls` : la ligne référence un produit à plusieurs déclinaisons sans préciser laquelle. Le `detail` **liste celles qui existent**. Aucun choix n'est fait au hasard : l'agent annoncerait un article non commandé. |
-| `order_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/shops/{id}/orders/{external_id}`, ou `POST /v1/calls` avec `order_external_id`, sur une commande inexistante, archivée, ou d'une autre boutique. **Corps identique dans les trois cas.** |
+| `order_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/orders/{external_id}`, ou `POST /v1/calls` avec `order_external_id`, sur une commande inexistante, archivée, ou d'un autre compte. **Corps identique dans les trois cas.** |
 | `order_call_in_progress` | 409 | Un appel n'est pas terminé sur cette commande : la modifier, l'archiver ou lancer un autre appel est refusé. Attendre la fin de l'appel — `call_in_progress` sur la fiche de la commande dit quand c'est possible. |
 | `product_not_found` | 404 | `GET`/`PATCH`/`DELETE` sur un produit inexistant, archivé, ou appartenant à une autre boutique. **Corps identique dans les trois cas.** L'identifiant d'un produit n'est unique qu'à l'intérieur d'une boutique. |
-| `product_external_id_already_exists` | 409 | `POST` d'un produit dont l'`external_id` est déjà pris dans cette boutique. La création est stricte : utiliser `PATCH` pour modifier. |
+| `product_external_id_already_exists` | 409 | `POST` d'un produit dont l'`external_id` est déjà pris **sur votre compte**, toutes boutiques confondues. La création est stricte : utiliser `PATCH` pour modifier. |
 | `shop_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/shops/{external_id}` sur une boutique inexistante, archivée, ou appartenant à un autre compte. **Corps identique dans les trois cas** — aucune fuite d'existence. Lister avec `GET /v1/shops?status=all` pour retrouver une boutique archivée. |
 | `shop_external_id_already_exists` | 409 | `POST /v1/shops` avec un `external_id` déjà utilisé sur ce compte. La création est stricte, jamais une mise à jour implicite : utiliser `PATCH` pour modifier, ou un autre identifiant pour créer une boutique distincte. |
 | `api_key_not_found` | 404 | `DELETE /v1/me/api-keys/{key_id}` sur une clé inexistante OU appartenant à un autre reseller. Body byte-identique sur les 2 cas — anti-énumération. |
@@ -2417,7 +2426,7 @@ ligne brute du tableau ci-dessus pour les autres slugs. Format stable, parsé au
 ### order_external_id_already_exists
 **Status** : 409
 **Causes** :
-- `POST /v1/calls` avec un `order.external_id` déjà utilisé pour le même boutique. Les commandes sont créées en insertion stricte, sans écrasement.
+- `POST /v1/calls` avec un `order.external_id` déjà utilisé **sur votre compte**, quelle que soit la boutique. Les commandes sont créées en insertion stricte, sans écrasement.
 - Retry d'une commande sans réutiliser la même `Idempotency-Key` (ce qui aurait déclenché un replay de la réponse stockée).
 - Deux services du reseller qui partagent le même pool d'`external_id` sans coordination.
 
@@ -4289,193 +4298,6 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-    get:
-      operationId: listProducts
-      summary: Lister les produits d'une boutique
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "600/minute"
-      description: |
-        Liste paginée du catalogue d'une boutique, du produit le plus
-        récent au plus ancien. Chaque fiche est renvoyée complète,
-        variantes comprises.
-
-        **Pagination** : curseur opaque, valable 24 h. Passez le
-        `next_cursor` de la réponse en `?cursor=` pour la page suivante.
-        Défaut 50 résultats, maximum 200.
-
-        **`?status=`** vaut `active` par défaut : les produits archivés sont
-        masqués. `archived` ne montre qu'eux, `all` ne filtre pas.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - in: query
-          name: cursor
-          schema: { type: string }
-          description: Curseur de la page suivante, tel que renvoyé par `next_cursor`.
-        - in: query
-          name: limit
-          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [active, archived, all]
-            default: active
-      responses:
-        "200":
-          description: Page de résultats.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PaginatedProducts" }
-        "400":
-          description: |
-            Curseur malformé, altéré ou expiré (`invalid_cursor`,
-            `cursor_expired`). Refaire la première requête sans `cursor`.
-          content:
-            application/problem+json:
-              schema: { $ref: "#/components/schemas/Problem" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ShopNotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-  /v1/shops/{shop_external_id}/products/{product_external_id}:
-    get:
-      operationId: getProduct
-      summary: Consulter un produit
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "600/minute"
-      description: |
-        Renvoie la fiche complète d'un produit, variantes comprises,
-        adressée par **vos** identifiants.
-
-        `unit_price` n'est présent que si le produit n'a qu'une variante ;
-        sinon, les prix vivent dans `variants`, un par déclinaison.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - $ref: "#/components/parameters/ProductExternalId"
-      responses:
-        "200":
-          description: Fiche du produit.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProductOut" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ProductNotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-    patch:
-      operationId: updateProduct
-      summary: Modifier un produit
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "120/minute"
-      description: |
-        Modification partielle. **Trois cas à distinguer :**
-
-        | Dans le corps | Effet |
-        |---|---|
-        | Champ **absent** | Inchangé |
-        | Champ à **`null`** | **Effacé** |
-        | Champ à **`""`** | Rejeté (422) |
-
-        ⚠️ **`variants` ne se modifie pas ligne à ligne : la liste envoyée
-        remplace entièrement l'ancienne.** Une variante absente de la
-        nouvelle liste est supprimée du catalogue. Pour n'en changer qu'une,
-        relisez le produit, modifiez l'entrée, renvoyez la liste complète.
-        Les commandes déjà passées ne bougent pas — elles ont retenu ce qui
-        leur a été dit au moment de l'appel.
-
-        Ne pas envoyer `variants` du tout les laisse intactes : renommer un
-        produit n'efface pas ses déclinaisons.
-
-        **`unit_price` seul** ne vaut que pour un produit à variante unique.
-        Sur un produit qui en a plusieurs, il est ambigu et refusé (422) :
-        c'est dans `variants` que le prix se pose. **`unit_price: null` est
-        refusé** dans tous les cas : un prix s'édite, il ne s'efface pas.
-
-        **`external_id` ne peut pas être modifié** — il porte l'historique
-        des commandes du produit. L'envoyer produit un 422.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - $ref: "#/components/parameters/ProductExternalId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ProductPatch" }
-            examples:
-              fiche:
-                summary: Deux champs modifiés, un effacé
-                value:
-                  description: "Coton bio 180g, coupe droite, col rond"
-                  max_discount: "15.00"
-                  current_promotions: null
-              prix_simple:
-                summary: Nouveau prix d'un produit sans déclinaison
-                value:
-                  unit_price: "159.00"
-              variantes:
-                summary: La liste complète, une taille en moins
-                value:
-                  variants:
-                    - external_id: "TSH-M"
-                      options: { Taille: "M" }
-                      unit_price: "149.00"
-                    - external_id: "TSH-XL"
-                      options: { Taille: "XL" }
-                      unit_price: "169.00"
-      responses:
-        "200":
-          description: Fiche mise à jour.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProductOut" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ProductNotFound" }
-        "422":
-          description: |
-            Payload invalide (`validation_error`) : chaîne vide, champ
-            inconnu, `external_id` fourni, `unit_price` sur un produit à
-            plusieurs variantes, ou liste de variantes incohérente.
-          content:
-            application/problem+json:
-              schema: { $ref: "#/components/schemas/Problem" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-    delete:
-      operationId: archiveProduct
-      summary: Archiver un produit
-      tags: [Products]
-      x-status: live
-      x-rate-limit: "120/minute"
-      description: |
-        **Le produit n'est pas supprimé, il est archivé.** Il disparaît du
-        catalogue par défaut et ne peut plus être commandé, mais les appels
-        qui l'ont mentionné restent intacts et consultables.
-
-        Pour le retrouver : `GET /v1/shops/{shop_external_id}/products?status=archived`.
-
-        Une commande qui le référence après coup est refusée
-        (`order_item_unknown_product`) : mieux vaut un appel qui ne part pas
-        qu'un appel qui annonce au client un article retiré de la vente.
-
-        Archiver un produit déjà archivé renvoie un 404 — indistinguable
-        d'un produit inexistant.
-      parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
-        - $ref: "#/components/parameters/ProductExternalId"
-      responses:
-        "204":
-          description: Produit archivé.
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/ProductNotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
   /healthz:
     get:
       operationId: healthz
@@ -4604,6 +4426,199 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /v1/products:
+    get:
+      operationId: listProducts
+      summary: Lister les produits d'une boutique
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Liste paginée du catalogue d'une boutique, du produit le plus
+        récent au plus ancien. Chaque fiche est renvoyée complète,
+        variantes comprises.
+
+        **Pagination** : curseur opaque, valable 24 h. Passez le
+        `next_cursor` de la réponse en `?cursor=` pour la page suivante.
+        Défaut 50 résultats, maximum 200.
+
+        **`?status=`** vaut `active` par défaut : les produits archivés sont
+        masqués. `archived` ne montre qu'eux, `all` ne filtre pas.
+      parameters:
+        - $ref: "#/components/parameters/ShopExternalIdFiltre"
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Curseur de la page suivante, tel que renvoyé par `next_cursor`.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
+      responses:
+        "200":
+          description: Page de résultats.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedProducts" }
+        "400":
+          description: |
+            Curseur malformé, altéré ou expiré (`invalid_cursor`,
+            `cursor_expired`). Refaire la première requête sans `cursor`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ShopNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/products/{product_external_id}:
+    get:
+      operationId: getProduct
+      summary: Consulter un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "600/minute"
+      description: |
+        Renvoie la fiche complète d'un produit, variantes comprises,
+        adressée par **vos** identifiants.
+
+        `unit_price` n'est présent que si le produit n'a qu'une variante ;
+        sinon, les prix vivent dans `variants`, un par déclinaison.
+      parameters:
+        - $ref: "#/components/parameters/ProductExternalId"
+      responses:
+        "200":
+          description: Fiche du produit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    patch:
+      operationId: updateProduct
+      summary: Modifier un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Modification partielle. **Trois cas à distinguer :**
+
+        | Dans le corps | Effet |
+        |---|---|
+        | Champ **absent** | Inchangé |
+        | Champ à **`null`** | **Effacé** |
+        | Champ à **`""`** | Rejeté (422) |
+
+        ⚠️ **`variants` ne se modifie pas ligne à ligne : la liste envoyée
+        remplace entièrement l'ancienne.** Une variante absente de la
+        nouvelle liste est supprimée du catalogue. Pour n'en changer qu'une,
+        relisez le produit, modifiez l'entrée, renvoyez la liste complète.
+        Les commandes déjà passées ne bougent pas — elles ont retenu ce qui
+        leur a été dit au moment de l'appel.
+
+        Ne pas envoyer `variants` du tout les laisse intactes : renommer un
+        produit n'efface pas ses déclinaisons.
+
+        `unit_price` à la racine ne vaut que pour un produit qui n'a qu'une
+        variante : avec plusieurs, on ne saurait pas laquelle reprendre et
+        la demande est refusée. Pour **ramener un produit à variantes vers
+        un produit simple**, envoyer `variants: []` avec `unit_price` : la
+        liste vide remplace toutes les variantes, et la variante unique
+        renaît avec ce prix.
+
+        **`unit_price` seul** ne vaut que pour un produit à variante unique.
+        Sur un produit qui en a plusieurs, il est ambigu et refusé (422) :
+        c'est dans `variants` que le prix se pose. **`unit_price: null` est
+        refusé** dans tous les cas : un prix s'édite, il ne s'efface pas.
+
+        **`external_id` ne peut pas être modifié** — il porte l'historique
+        des commandes du produit. L'envoyer produit un 422.
+      parameters:
+        - $ref: "#/components/parameters/ProductExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductPatch" }
+            examples:
+              fiche:
+                summary: Deux champs modifiés, un effacé
+                value:
+                  description: "Coton bio 180g, coupe droite, col rond"
+                  max_discount: "15.00"
+                  current_promotions: null
+              prix_simple:
+                summary: Nouveau prix d'un produit sans déclinaison
+                value:
+                  unit_price: "159.00"
+              variantes:
+                summary: La liste complète, une taille en moins
+                value:
+                  variants:
+                    - external_id: "TSH-M"
+                      options: { Taille: "M" }
+                      unit_price: "149.00"
+                    - external_id: "TSH-XL"
+                      options: { Taille: "XL" }
+                      unit_price: "169.00"
+      responses:
+        "200":
+          description: Fiche mise à jour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "422":
+          description: |
+            Payload invalide (`validation_error`) : chaîne vide, champ
+            inconnu, `external_id` fourni, `unit_price` sur un produit à
+            plusieurs variantes, ou liste de variantes incohérente.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    delete:
+      operationId: archiveProduct
+      summary: Archiver un produit
+      tags: [Products]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        **Le produit n'est pas supprimé, il est archivé.** Il disparaît du
+        catalogue par défaut et ne peut plus être commandé, mais les appels
+        qui l'ont mentionné restent intacts et consultables.
+
+        Pour le retrouver : `GET /v1/shops/{shop_external_id}/products?status=archived`.
+
+        Une commande qui le référence après coup est refusée
+        (`order_item_unknown_product`) : mieux vaut un appel qui ne part pas
+        qu'un appel qui annonce au client un article retiré de la vente.
+
+        Archiver un produit déjà archivé renvoie un 404 — indistinguable
+        d'un produit inexistant.
+      parameters:
+        - $ref: "#/components/parameters/ProductExternalId"
+      responses:
+        "204":
+          description: Produit archivé.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProductNotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/orders:
     get:
       operationId: listOrders
       summary: Lister les commandes d'une boutique
@@ -4624,7 +4639,7 @@ paths:
         **`?order_status=`** ne garde que les commandes dans cet état
         (`PENDING`, `CONFIRMED`…).
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
+        - $ref: "#/components/parameters/ShopExternalIdFiltre"
         - in: query
           name: cursor
           schema: { type: string }
@@ -4660,7 +4675,7 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /v1/shops/{shop_external_id}/orders/{order_external_id}:
+  /v1/orders/{order_external_id}:
     get:
       operationId: getOrder
       summary: Consulter une commande
@@ -4674,7 +4689,6 @@ paths:
         dit si un appel n'est pas terminé — la commande ne peut alors ni
         être modifiée, ni archivée, ni rappelée.
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
         - $ref: "#/components/parameters/OrderExternalId"
       responses:
         "200":
@@ -4716,7 +4730,6 @@ paths:
         **`external_id` ne peut pas être modifié** — il porte l'historique
         des appels. L'envoyer avec une autre valeur produit un 422.
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
         - $ref: "#/components/parameters/OrderExternalId"
       requestBody:
         required: true
@@ -4778,7 +4791,6 @@ paths:
 
         **Refusé pendant un appel en cours** (`409 order_call_in_progress`).
       parameters:
-        - $ref: "#/components/parameters/ShopExternalId"
         - $ref: "#/components/parameters/OrderExternalId"
       responses:
         "204":
@@ -4806,6 +4818,17 @@ components:
         Yasmine (bootstrap). Self-service `POST /v1/me/api-keys` à venir
         en M4.
   parameters:
+    ShopExternalIdFiltre:
+      in: query
+      name: shop_external_id
+      required: false
+      schema: { type: string, maxLength: 128, pattern: "^[a-zA-Z0-9_.-]+$" }
+      description: |
+        Restreint la liste à une boutique. Absent, la liste couvre tout
+        votre compte — un revendeur multi-boutiques n'a plus à les
+        interroger une par une, ni à fusionner et repaginer lui-même.
+        Une boutique inconnue répond `404 shop_not_found`.
+      example: "shop-4471"
     ShopExternalId:
       in: path
       name: shop_external_id
@@ -5874,8 +5897,9 @@ components:
             Sur un `PATCH`, la liste envoyee **remplace entierement** l''ancienne ; une variante
             qui n''y figure plus est supprimee. Les commandes deja passees ne bougent pas.'
         external_id:
-          description: Identifiant du produit dans VOTRE systeme. Sert d'adresse dans l'URL, d'ou
-            le jeu de caracteres restreint. **Immuable** apres creation.
+          description: Identifiant du produit dans VOTRE systeme, **unique sur tout votre
+            compte** — toutes boutiques confondues. Sert d'adresse dans l'URL, d'ou le jeu
+            de caracteres restreint. **Immuable** apres creation.
           maxLength: 128
           minLength: 1
           pattern: ^[a-zA-Z0-9_.-]+$
@@ -6296,8 +6320,10 @@ components:
             un PATCH revient a celle de la boutique.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
-          description: Identifiant de la commande dans VOTRE systeme, unique par boutique. Sert
-            d'adresse dans l'URL et de reference pour lancer l'appel. **Immuable** apres creation.
+          description: Identifiant de la commande dans VOTRE systeme, **unique sur tout votre
+            compte** — toutes boutiques confondues, pour qu'une reference designe une commande
+            et une seule. Sert d'adresse dans l'URL et de reference pour lancer l'appel.
+            **Immuable** apres creation.
           maxLength: 128
           minLength: 1
           pattern: ^[a-zA-Z0-9_.-]+$
@@ -8326,7 +8352,55 @@ politique de versioning décrite dans `docs/versioning.md`.
   plus tard dans les 48 heures. Vous n'avez plus à réessayer de votre
   côté.
 
+### Changed
+
+- **Les adresses ne portent plus la boutique quand la référence suffit.**
+  Une commande et un produit se lisent, se modifient et s'archivent
+  directement :
+
+  | Avant | Maintenant |
+  |---|---|
+  | `GET/PATCH/DELETE /v1/shops/{b}/orders/{o}` | `GET/PATCH/DELETE /v1/orders/{o}` |
+  | `GET/PATCH/DELETE /v1/shops/{b}/products/{p}` | `GET/PATCH/DELETE /v1/products/{p}` |
+  | `GET /v1/shops/{b}/orders` | `GET /v1/orders?shop_external_id={b}` |
+  | `GET /v1/shops/{b}/products` | `GET /v1/products?shop_external_id={b}` |
+
+  **La création ne change pas** : `POST /v1/shops/{b}/orders` et
+  `POST /v1/shops/{b}/products` gardent la boutique, seul moment où il
+  faut dire à qui la ressource appartient.
+
+  **Ce que vous y gagnez** : la boutique devient un filtre facultatif sur
+  les listes. Un revendeur multi-boutiques voit tout son compte d'une
+  requête, correctement paginé, au lieu d'interroger ses boutiques une
+  par une et de fusionner lui-même.
+
+  **Les anciennes adresses sont retirées**, sans période de coexistence.
+
+- **Une référence désigne désormais une seule chose sur tout votre
+  compte.** `external_id` d'un produit et d'une commande devient unique
+  **toutes boutiques confondues**, alors qu'il ne l'était que dans sa
+  boutique. Deux boutiques ne peuvent donc plus avoir chacune leur
+  « CMD-1001 », et une référence suffit à désigner la commande dont on
+  parle — dans un événement sortant comme dans vos propres journaux.
+  Les boutiques suivaient déjà cette règle.
+
+  **Ce que cela change pour vous** : si vos boutiques numérotent chacune
+  de leur côté et que deux références se rencontrent, la seconde
+  déclaration est refusée (`409`, message explicite). Préfixez alors vos
+  références par la boutique. Les déclinaisons d'un produit ne sont pas
+  concernées : elles restent uniques dans leur produit, « XL » se
+  répétant forcément d'un produit à l'autre.
+
 ### Added
+
+- **Les événements de fin d'appel portent enfin vos références.**
+  `call.ended`, `call.cancelled` et `call.failed` embarquent désormais
+  `shop_external_id` et `order_external_id`, les identifiants que vous
+  nous avez donnés en déclarant la boutique et la commande. Vous
+  retrouvez donc la commande concernée sans avoir eu à mémoriser notre
+  `call_id` au lancement, ni à tenir une table de correspondance.
+  `call_id` reste présent, pour l'enregistrement et pour dédupliquer un
+  retry. Aucun champ n'est retiré.
 
 - **La plage d'appel : `call_hours` sur la boutique et sur la commande.**
   Les créneaux pendant lesquels un client peut être appelé, au format des

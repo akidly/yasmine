@@ -64,13 +64,13 @@ Certains `type` ajoutent des champs dédiés :
 | `idempotency_key_empty` | 400 | Header `Idempotency-Key` présent mais vide. Doit faire au moins 1 char. |
 | `idempotency_key_too_long` | 400 | Header `Idempotency-Key` > 255 chars. Limite stricte côté serveur. |
 | `idempotency_key_conflict` | 409 | Même `Idempotency-Key` réutilisée avec un body différent dans la fenêtre de 24 h. Générer une nouvelle clé pour une requête différente. Le body original n'est jamais ré-exposé. |
-| `order_external_id_already_exists` | 409 | `POST /v1/shops/{id}/orders`, ou `POST /v1/calls` avec `order.external_id`, sur un identifiant déjà utilisé dans cette boutique. La création est stricte. Pour rappeler le client sur la même commande : `POST /v1/calls` avec `order_external_id` — les appels s'empilent sur la commande. Pour une commande distincte, une `external_id` différente. |
+| `order_external_id_already_exists` | 409 | `POST /v1/shops/{id}/orders`, ou `POST /v1/calls` avec `order.external_id`, sur un identifiant déjà utilisé **sur votre compte** — l'unicité vaut toutes boutiques confondues. La création est stricte. Pour rappeler le client sur la même commande : `POST /v1/calls` avec `order_external_id` — les appels s'empilent sur la commande. Pour une commande distincte, une `external_id` différente. |
 | `order_item_unknown_product` | 422 | `POST /v1/calls` : une ligne référence un produit ou une variante qui n'existe pas dans la boutique de l'appel. Le déclarer, ou décrire l'article sur place — une ligne avec `name` et `unit_price` reste valide, un produit non déclaré ne doit jamais bloquer un appel. |
 | `order_item_variant_required` | 422 | `POST /v1/calls` : la ligne référence un produit à plusieurs déclinaisons sans préciser laquelle. Le `detail` **liste celles qui existent**. Aucun choix n'est fait au hasard : l'agent annoncerait un article non commandé. |
-| `order_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/shops/{id}/orders/{external_id}`, ou `POST /v1/calls` avec `order_external_id`, sur une commande inexistante, archivée, ou d'une autre boutique. **Corps identique dans les trois cas.** |
+| `order_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/orders/{external_id}`, ou `POST /v1/calls` avec `order_external_id`, sur une commande inexistante, archivée, ou d'un autre compte. **Corps identique dans les trois cas.** |
 | `order_call_in_progress` | 409 | Un appel n'est pas terminé sur cette commande : la modifier, l'archiver ou lancer un autre appel est refusé. Attendre la fin de l'appel — `call_in_progress` sur la fiche de la commande dit quand c'est possible. |
 | `product_not_found` | 404 | `GET`/`PATCH`/`DELETE` sur un produit inexistant, archivé, ou appartenant à une autre boutique. **Corps identique dans les trois cas.** L'identifiant d'un produit n'est unique qu'à l'intérieur d'une boutique. |
-| `product_external_id_already_exists` | 409 | `POST` d'un produit dont l'`external_id` est déjà pris dans cette boutique. La création est stricte : utiliser `PATCH` pour modifier. |
+| `product_external_id_already_exists` | 409 | `POST` d'un produit dont l'`external_id` est déjà pris **sur votre compte**, toutes boutiques confondues. La création est stricte : utiliser `PATCH` pour modifier. |
 | `shop_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/shops/{external_id}` sur une boutique inexistante, archivée, ou appartenant à un autre compte. **Corps identique dans les trois cas** — aucune fuite d'existence. Lister avec `GET /v1/shops?status=all` pour retrouver une boutique archivée. |
 | `shop_external_id_already_exists` | 409 | `POST /v1/shops` avec un `external_id` déjà utilisé sur ce compte. La création est stricte, jamais une mise à jour implicite : utiliser `PATCH` pour modifier, ou un autre identifiant pour créer une boutique distincte. |
 | `api_key_not_found` | 404 | `DELETE /v1/me/api-keys/{key_id}` sur une clé inexistante OU appartenant à un autre reseller. Body byte-identique sur les 2 cas — anti-énumération. |
@@ -207,7 +207,7 @@ ligne brute du tableau ci-dessus pour les autres slugs. Format stable, parsé au
 ### order_external_id_already_exists
 **Status** : 409
 **Causes** :
-- `POST /v1/calls` avec un `order.external_id` déjà utilisé pour le même boutique. Les commandes sont créées en insertion stricte, sans écrasement.
+- `POST /v1/calls` avec un `order.external_id` déjà utilisé **sur votre compte**, quelle que soit la boutique. Les commandes sont créées en insertion stricte, sans écrasement.
 - Retry d'une commande sans réutiliser la même `Idempotency-Key` (ce qui aurait déclenché un replay de la réponse stockée).
 - Deux services du reseller qui partagent le même pool d'`external_id` sans coordination.
 

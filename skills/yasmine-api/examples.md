@@ -221,7 +221,7 @@ Trois champs du produit l'emportent sur ceux de la boutique, quand ils
 sont renseignés :
 
 ```bash
-curl -X PATCH "$BASE/v1/shops/shop-4471/products/SERUM-VITC" \
+curl -X PATCH "$BASE/v1/products/SERUM-VITC" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -d '{
@@ -245,7 +245,7 @@ nouvelle liste est supprimée du catalogue.
 
 ```bash
 # Retirer la taille S : on renvoie la liste sans elle.
-curl -X PATCH "$BASE/v1/shops/shop-4471/products/TSHIRT-BLANC" \
+curl -X PATCH "$BASE/v1/products/TSHIRT-BLANC" \
   -H "Authorization: Bearer $YK" \
   -H "Content-Type: application/json" \
   -d '{
@@ -266,10 +266,10 @@ dit au client au moment de l'appel.
 ### Lister et archiver
 
 ```bash
-curl "$BASE/v1/shops/shop-4471/products?limit=50" \
+curl "$BASE/v1/products?limit=50&shop_external_id=shop-4471" \
   -H "Authorization: Bearer $YK"
 
-curl -X DELETE "$BASE/v1/shops/shop-4471/products/TSHIRT-BLANC" \
+curl -X DELETE "$BASE/v1/products/TSHIRT-BLANC" \
   -H "Authorization: Bearer $YK"
 # 204 No Content
 ```
@@ -429,13 +429,13 @@ refusé (`409 order_call_in_progress`).
 ### Relire, corriger, archiver
 
 ```bash
-curl "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+curl "$BASE/v1/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
 
-curl -X PATCH "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" \
+curl -X PATCH "$BASE/v1/orders/CMD-2026-8891" \
   -H "Authorization: Bearer $YK" -H "Content-Type: application/json" \
   -d '{ "delivery_address": "14 rue des Orangers, Casablanca", "amount": "450.00" }'
 
-curl -X DELETE "$BASE/v1/shops/shop-4471/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
+curl -X DELETE "$BASE/v1/orders/CMD-2026-8891" -H "Authorization: Bearer $YK"
 ```
 
 Le `PATCH` suit la règle des produits : absent = inchangé, `null` = effacé,

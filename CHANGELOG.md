@@ -17,7 +17,55 @@ politique de versioning décrite dans `docs/versioning.md`.
   plus tard dans les 48 heures. Vous n'avez plus à réessayer de votre
   côté.
 
+### Changed
+
+- **Les adresses ne portent plus la boutique quand la référence suffit.**
+  Une commande et un produit se lisent, se modifient et s'archivent
+  directement :
+
+  | Avant | Maintenant |
+  |---|---|
+  | `GET/PATCH/DELETE /v1/shops/{b}/orders/{o}` | `GET/PATCH/DELETE /v1/orders/{o}` |
+  | `GET/PATCH/DELETE /v1/shops/{b}/products/{p}` | `GET/PATCH/DELETE /v1/products/{p}` |
+  | `GET /v1/shops/{b}/orders` | `GET /v1/orders?shop_external_id={b}` |
+  | `GET /v1/shops/{b}/products` | `GET /v1/products?shop_external_id={b}` |
+
+  **La création ne change pas** : `POST /v1/shops/{b}/orders` et
+  `POST /v1/shops/{b}/products` gardent la boutique, seul moment où il
+  faut dire à qui la ressource appartient.
+
+  **Ce que vous y gagnez** : la boutique devient un filtre facultatif sur
+  les listes. Un revendeur multi-boutiques voit tout son compte d'une
+  requête, correctement paginé, au lieu d'interroger ses boutiques une
+  par une et de fusionner lui-même.
+
+  **Les anciennes adresses sont retirées**, sans période de coexistence.
+
+- **Une référence désigne désormais une seule chose sur tout votre
+  compte.** `external_id` d'un produit et d'une commande devient unique
+  **toutes boutiques confondues**, alors qu'il ne l'était que dans sa
+  boutique. Deux boutiques ne peuvent donc plus avoir chacune leur
+  « CMD-1001 », et une référence suffit à désigner la commande dont on
+  parle — dans un événement sortant comme dans vos propres journaux.
+  Les boutiques suivaient déjà cette règle.
+
+  **Ce que cela change pour vous** : si vos boutiques numérotent chacune
+  de leur côté et que deux références se rencontrent, la seconde
+  déclaration est refusée (`409`, message explicite). Préfixez alors vos
+  références par la boutique. Les déclinaisons d'un produit ne sont pas
+  concernées : elles restent uniques dans leur produit, « XL » se
+  répétant forcément d'un produit à l'autre.
+
 ### Added
+
+- **Les événements de fin d'appel portent enfin vos références.**
+  `call.ended`, `call.cancelled` et `call.failed` embarquent désormais
+  `shop_external_id` et `order_external_id`, les identifiants que vous
+  nous avez donnés en déclarant la boutique et la commande. Vous
+  retrouvez donc la commande concernée sans avoir eu à mémoriser notre
+  `call_id` au lancement, ni à tenir une table de correspondance.
+  `call_id` reste présent, pour l'enregistrement et pour dédupliquer un
+  retry. Aucun champ n'est retiré.
 
 - **La plage d'appel : `call_hours` sur la boutique et sur la commande.**
   Les créneaux pendant lesquels un client peut être appelé, au format des

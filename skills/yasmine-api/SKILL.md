@@ -92,14 +92,20 @@ price for that one order stays possible. An item with `name` and no
 reference is still valid: that is the door for a custom item, shipping
 fees or a gift, and an undeclared product must never block a call.
 
-Errors: `409 product_external_id_already_exists` (unique per shop only —
-the same id is free in another shop), `404 product_not_found`,
+Errors: `409 product_external_id_already_exists` (**`external_id` is
+unique across the whole account, all shops included** — the same id is
+NOT free in another shop), `404 product_not_found`,
 `422 order_item_unknown_product`, `422 order_item_variant_required` whose
 `detail` lists the variants that do exist.
 
 ## Orders as a resource (declare, then call by reference)
 
 `POST /v1/shops/{shop_external_id}/orders` declares an order under a shop
+— the only call that names the shop, since a fresh reference cannot say
+which shop it belongs to. Everything else lives at the root:
+`GET/PATCH/DELETE /v1/orders/{order_external_id}`, and
+`GET /v1/orders?shop_external_id=…` to filter a list. Products follow the
+same shape
 with **your** identifier. Minimum: `external_id`, `customer`, `amount`, and
 either `items` or `items_text`. Same five routes as products: `POST`, `GET`
 (paginated, `?order_status=` filter), `GET /{id}`, `PATCH`, `DELETE`
@@ -126,7 +132,10 @@ order. Prefer this form over describing the order inline.
   `order.previous_attempts` either: the server counts past calls.
 
 Errors: `404 order_not_found`, `409 order_call_in_progress`,
-`409 order_external_id_already_exists`.
+`409 order_external_id_already_exists` — an order `external_id` is unique
+across the whole account, all shops included, so one reference always
+designates one order. Variant `external_id` stays unique within its
+product.
 
 **Calling hours.** `call_hours` on the shop (default) and on the order
 (override), in OpenStreetMap opening-hours syntax:
@@ -146,6 +155,7 @@ For network retries (504, timeout) **reuse the same key** — the API replays th
 
 After a call ends, the `CallOut` and the `call.ended` webhook payload expose:
 
+- **`shop_external_id` / `order_external_id`** (webhook payload only) : *your* references, the ones you gave when declaring the shop and the order. Match the event to your own order without keeping a lookup table of our `call_id`. Also present on `call.cancelled` and `call.failed`.
 - **`result`** : `confirmed` / `cancelled` / `requires_action` (3 lowercase values).
   - `confirmed` = the order is confirmed (bill normally). May include a `result_detail=modified` if the customer asked for a change.
   - `cancelled` = the customer cancelled, OR `result_detail=wrong_number|denied_order` (treated as cancellation server-side).

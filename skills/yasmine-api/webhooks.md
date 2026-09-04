@@ -525,6 +525,8 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 ```json
 {
   "call_id": "d5a97d2b-...",
+  "shop_external_id": "BOUTIQUE-01",
+  "order_external_id": "CMD-2026-8891",
   "result": "confirmed",
   "result_detail": "modified",
   "customer_mood": "positive",
@@ -539,6 +541,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "language": "ar"
 }
 ```
+- `shop_external_id` / `order_external_id` : **vos** références, celles que vous nous avez données en déclarant la boutique et la commande. Elles vous évitent de tenir une table de correspondance avec nos identifiants : vous retrouvez la commande concernée sans rien avoir eu à mémoriser au lancement. `call_id` reste utile pour l'enregistrement et pour dédupliquer un retry.
 - `result` parmi `confirmed` / `cancelled` / `requires_action`. `confirmed` = la commande est confirmée (à facturer normalement). `cancelled` = la commande est annulée. `requires_action` = aucune décision automatique, le marchand traite manuellement.
 - `result_detail` : nuance fine. Slugs courants : `modified` (commande confirmée avec une modification — cas type « oui mais en bleu », à facturer comme confirmée), `wrong_number`, `denied_order`, `human_requested`, `price_dispute`, `postponed`, `callback`, `unconfirmed`, `unclear`, `no_answer`, `failed`. `null` quand `result` est `confirmed` ou `cancelled` sans nuance particulière.
 - `customer_mood` parmi `positive` / `neutral` / `negative` / `frustrated` / `unclear`, ou `null` si non détectable. `unclear` signale que l'audio était globalement incompréhensible (corrélé généralement avec `result_detail=unclear`).
@@ -558,6 +561,8 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
 ```json
 {
   "call_id": "d5a97d2b-...",
+  "shop_external_id": "BOUTIQUE-01",
+  "order_external_id": "CMD-2026-8891",
   "cancelled_at": "2026-04-20T14:00:16.123456Z",
   "cancelled_state": "connected",
   "billed_seconds": 25,
@@ -566,6 +571,7 @@ Transition `call_status → ended`. Fin d'appel normale. Facturation appliquée.
   "language": "fr"
 }
 ```
+- `shop_external_id` / `order_external_id` : vos références, mêmes sémantiques que pour `call.ended`.
 - `cancelled_state` : `call_status` au moment où le cancel a été traité (`not_started`/`dialing`/`ringing`/`connected`). Permet au reseller de savoir à quel stade l'appel a été coupé.
 - `billed_seconds` : 0 si cancel avant `connected` ; sinon `ceil(now - accepted_at)` avec plancher 10 s.
 - `country` / `language` (depuis le Lot 2 chantier pays × langue) : mêmes sémantiques que pour `call.ended`. Absents sur les cancels d'appels antérieurs au Lot 2.
@@ -578,11 +584,14 @@ Transition `call_status → failed`. Échec infra côté plateforme ou côté cl
 ```json
 {
   "call_id": "d5a97d2b-...",
+  "shop_external_id": "BOUTIQUE-01",
+  "order_external_id": "CMD-2026-8891",
   "failure_reason": "meta_400:131030",
   "country": "FR",
   "language": "fr"
 }
 ```
+- `shop_external_id` / `order_external_id` : vos références, mêmes sémantiques que pour `call.ended`.
 - `failure_reason` parmi (non exhaustif) :
   - `client_rejected` : client a refusé avant d'accepter l'appel (webhook plateforme).
   - `meta_<status>[:<code>]` : erreur côté plateforme avec code spécifique (ex. `meta_400:131030`, `meta_500`). **Phase 3 (2026-04-26)** : le code numérique est désormais propagé systématiquement quand disponible — auparavant le slug était `meta_<status>` seul, le code étant uniquement visible en logs internes.
