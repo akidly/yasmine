@@ -493,7 +493,7 @@ Aucun event rail APPEL ne suivra. Le reseller peut basculer sur un autre canal (
 
 ### Rail APPEL (vie de l'appel téléphonique)
 
-> **Note Lot 2 chantier pays × langue (Unreleased)** : seuls les **trois events terminaux** du rail APPEL portent les champs `country` (ISO) et `language` (`ar`/`fr`) — `call.ended`, `call.cancelled`, `call.failed`. Les events intermédiaires (`call.started`, `call.ringing`, `call.connected`) ne les portent **pas** : intentionnel, le reseller a déjà ces deux informations depuis sa propre requête `POST /v1/calls`. Idem pour les events `call.request.*` du rail DEMANDE et pour `call.request.permission_revoked` / `call.request.permission_auto_revoked` (scope `wa_id`, pas d'appel précis associé).
+> **Note** : seuls les **trois events terminaux** du rail APPEL portent les champs `country` (ISO) et `language` (`ar`/`fr`) — `call.ended`, `call.cancelled`, `call.failed`. Les events intermédiaires (`call.started`, `call.ringing`, `call.connected`) ne les portent **pas** — ils portent en revanche vos références `shop_external_id` / `order_external_id`, comme tous les events d'appel : intentionnel, le reseller a déjà ces deux informations depuis sa propre requête `POST /v1/calls`. Idem pour les events `call.request.*` du rail DEMANDE et pour `call.request.permission_revoked` / `call.request.permission_auto_revoked` (scope `wa_id`, pas d'appel précis associé).
 
 #### `call.started`
 Transition `call_status → dialing`. La plateforme a accepté la requête d'appel, la composition est en cours.
@@ -506,8 +506,14 @@ Transition `call_status → dialing`. La plateforme a accepté la requête d'app
 Transition `call_status → ringing`. Le téléphone du client sonne.
 
 ```json
-{ "call_id": "d5a97d2b-..." }
+{
+  "call_id": "d5a97d2b-...",
+  "shop_external_id": "BOUTIQUE-01",
+  "order_external_id": "CMD-2026-8891"
+}
 ```
+- Vos références y figurent, comme sur les events terminaux : vous
+  reconnaissez la commande concernée sans rien avoir mémorisé.
 
 #### `call.connected`
 Transition `call_status → connected`. Le client a décroché, le pipeline IA démarre.

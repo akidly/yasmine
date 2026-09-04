@@ -58,6 +58,21 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Added
 
+- **Les appels téléphoniques émettent enfin leurs événements.**
+  Jusqu'ici, seuls les appels WhatsApp vous prévenaient : un appel
+  téléphonique se terminait sans que vous en sachiez rien, et votre
+  commande restait figée sur « appel en cours » jusqu'à ce que vous
+  releviez son état vous-même.
+
+  Vous recevez désormais, pour chaque appel : `call.ringing` quand la
+  ligne compose, `call.connected` quand le client décroche, puis
+  `call.ended` avec le résultat complet, ou `call.failed` avec la raison
+  quand l'appel n'a pas abouti (`no_answer`, `busy`, `voicemail`,
+  `invalid_number`…). Tous portent vos références.
+
+  Un événement perdu ne prive de rien : l'événement final reste la source
+  de vérité, et l'état se relit à tout moment sur la commande.
+
 - **Les événements de fin d'appel portent enfin vos références.**
   `call.ended`, `call.cancelled` et `call.failed` embarquent désormais
   `shop_external_id` et `order_external_id`, les identifiants que vous
