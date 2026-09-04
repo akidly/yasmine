@@ -21,6 +21,11 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Changed
 
+- **`customer_service_hours` accepte 200 caractères** (100 auparavant),
+  sur la création et la mise à jour d'une boutique. De quoi décrire une
+  semaine complète, jour par jour, avec une pause déjeuner. Le champ
+  reste du texte libre, lu tel quel à la cliente.
+
 - **Une demande d'appel sur le canal téléphonique n'est plus jamais
   refusée pour indisponibilité momentanée.** Le `503 service_unavailable`
   avec `Retry-After` qui pouvait répondre à `POST /v1/calls` disparaît :

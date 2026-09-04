@@ -2386,7 +2386,7 @@ components:
           type: string
           nullable: true
         customer_service_hours:
-          maxLength: 100
+          maxLength: 200
           minLength: 1
           type: string
           nullable: true
@@ -2630,7 +2630,7 @@ components:
           type: string
           nullable: true
         customer_service_hours:
-          maxLength: 100
+          maxLength: 200
           minLength: 1
           type: string
           nullable: true
@@ -4246,7 +4246,7 @@ components:
         customer_service_hours:
           type: string
           nullable: true
-          maxLength: 100
+          maxLength: 200
           description: >-
             Horaires du service client, en texte libre (ex. « Lun-Sam
             9h-18h »). L'agent s'en sert pour répondre au client qui
