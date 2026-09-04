@@ -2990,6 +2990,16 @@ components:
           description: Reference de stock, a votre usage. Conservee telle quelle et renvoyee dans
             les lectures ; jamais prononcee au client.
           example: TSH-BLC-XL
+        stock_quantity:
+          maximum: 1000000
+          minimum: 0
+          type: integer
+          nullable: true
+          description: 'Quantite en stock de cette variante, si vous la suivez. Absent ou
+            `null` : inconnue, l''agent n''en dit rien. **`0` : epuisee** — l''agent ne
+            confirme pas un article qu''on ne peut pas livrer, et propose une autre variante
+            s''il en reste.'
+          example: 12
       required:
       - unit_price
       type: object
@@ -3068,6 +3078,17 @@ components:
             si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.
             Jamais `null` sur un `PATCH` : un prix s''edite, il ne s''efface pas.'
           nullable: true
+        stock_quantity:
+          maximum: 1000000
+          minimum: 0
+          type: integer
+          nullable: true
+          description: '**Le stock d''un produit sans choix**, pose sur sa variante unique
+            — meme raccourci que `unit_price`. Absent : inconnu, l''agent n''en dit rien.
+            `0` : epuise. Sur un `PATCH`, `null` efface la quantite (le stock redevient
+            inconnu). En lecture, renvoye seulement si le produit n''a qu''une variante ;
+            sinon lire `variants`.'
+          example: 12
         variants:
           items:
             $ref: '#/components/schemas/ProductVariantInput'
@@ -3179,6 +3200,17 @@ components:
             si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.
             Jamais `null` sur un `PATCH` : un prix s''edite, il ne s''efface pas.'
           nullable: true
+        stock_quantity:
+          maximum: 1000000
+          minimum: 0
+          type: integer
+          nullable: true
+          description: '**Le stock d''un produit sans choix**, pose sur sa variante unique
+            — meme raccourci que `unit_price`. Absent : inconnu, l''agent n''en dit rien.
+            `0` : epuise. Sur un `PATCH`, `null` efface la quantite (le stock redevient
+            inconnu). En lecture, renvoye seulement si le produit n''a qu''une variante ;
+            sinon lire `variants`.'
+          example: 12
         variants:
           items:
             $ref: '#/components/schemas/ProductVariantInput'
@@ -3236,6 +3268,10 @@ components:
         sku:
           type: string
           nullable: true
+        stock_quantity:
+          type: integer
+          nullable: true
+          description: 'Quantite en stock, `null` si vous ne la suivez pas. `0` : epuisee.'
         position:
           description: 'Rang de la variante dans le produit, a partir de 0 — celui de la liste
             que vous avez envoyee. Il rend les lectures stables : deux appels successifs renvoient
@@ -3288,6 +3324,11 @@ components:
           description: Prix de la variante unique. **Absent si le produit a plusieurs variantes**
             — lire `variants` dans ce cas.
           nullable: true
+        stock_quantity:
+          type: integer
+          nullable: true
+          description: 'Stock de la variante unique. **Absent si le produit a plusieurs
+            variantes** — lire `variants` dans ce cas ; `null` si vous ne le suivez pas.'
         variants:
           items:
             $ref: '#/components/schemas/ProductVariantOut'

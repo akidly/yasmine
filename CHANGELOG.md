@@ -8,6 +8,17 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ## [Unreleased]
 
+### Added
+
+- **Le stock, par variante.** `stock_quantity` (entier, facultatif) sur
+  chaque entree de `variants`, et en raccourci au niveau du produit pour
+  un article sans choix, a cote de `unit_price`. Absent ou `null` : vous
+  ne suivez pas le stock, rien ne change. **`0` : epuise** — l'agent ne
+  confirme pas un article qu'on ne peut pas livrer et propose une autre
+  variante s'il en reste. Renvoye a l'identique dans toutes les lectures
+  (`stock_quantity` sur chaque variante, et au niveau du produit quand il
+  n'en a qu'une).
+
 ### Changed
 
 - **Une demande d'appel sur le canal téléphonique n'est plus jamais

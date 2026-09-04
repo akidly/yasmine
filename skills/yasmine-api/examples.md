@@ -200,7 +200,7 @@ curl -X POST "$BASE/v1/shops/shop-4471/products" \
       { "external_id": "TSH-S",  "options": {"Taille": "S"},  "unit_price": "149.00" },
       { "external_id": "TSH-M",  "options": {"Taille": "M"},  "unit_price": "149.00" },
       { "external_id": "TSH-XL", "options": {"Taille": "XL"}, "unit_price": "169.00",
-        "compare_at_price": "199.00" }
+        "compare_at_price": "199.00", "stock_quantity": 0 }
     ]
   }'
 ```
@@ -212,6 +212,12 @@ laquelle. Le refus est un 422 qui nomme les entrées fautives.
 `compare_at_price` est le prix barré, celui qui permet de dire « c'était
 199, vous l'avez à 169 ». Il doit être **strictement supérieur** au prix :
 l'inverse serait forcément une erreur de saisie.
+
+`stock_quantity` est la quantité en stock de la déclinaison, si vous la
+suivez. Absent : l'agent n'en dit rien. **`0` : épuisée** — l'agent ne
+confirme pas un article qu'on ne peut pas livrer et propose une autre
+déclinaison s'il en reste. Pour un produit sans choix, le champ se pose
+au niveau du produit, à côté de `unit_price`.
 
 Trois axes d'options au maximum (`{"Taille": "XL", "Couleur": "rouge"}`).
 

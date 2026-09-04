@@ -651,7 +651,7 @@ curl -X POST "$BASE/v1/shops/shop-4471/products" \
       { "external_id": "TSH-S",  "options": {"Taille": "S"},  "unit_price": "149.00" },
       { "external_id": "TSH-M",  "options": {"Taille": "M"},  "unit_price": "149.00" },
       { "external_id": "TSH-XL", "options": {"Taille": "XL"}, "unit_price": "169.00",
-        "compare_at_price": "199.00" }
+        "compare_at_price": "199.00", "stock_quantity": 0 }
     ]
   }'
 ```
@@ -663,6 +663,12 @@ laquelle. Le refus est un 422 qui nomme les entrées fautives.
 `compare_at_price` est le prix barré, celui qui permet de dire « c'était
 199, vous l'avez à 169 ». Il doit être **strictement supérieur** au prix :
 l'inverse serait forcément une erreur de saisie.
+
+`stock_quantity` est la quantité en stock de la déclinaison, si vous la
+suivez. Absent : l'agent n'en dit rien. **`0` : épuisée** — l'agent ne
+confirme pas un article qu'on ne peut pas livrer et propose une autre
+déclinaison s'il en reste. Pour un produit sans choix, le champ se pose
+au niveau du produit, à côté de `unit_price`.
 
 Trois axes d'options au maximum (`{"Taille": "XL", "Couleur": "rouge"}`).
 
@@ -5811,6 +5817,16 @@ components:
           description: Reference de stock, a votre usage. Conservee telle quelle et renvoyee dans
             les lectures ; jamais prononcee au client.
           example: TSH-BLC-XL
+        stock_quantity:
+          maximum: 1000000
+          minimum: 0
+          type: integer
+          nullable: true
+          description: 'Quantite en stock de cette variante, si vous la suivez. Absent ou
+            `null` : inconnue, l''agent n''en dit rien. **`0` : epuisee** — l''agent ne
+            confirme pas un article qu''on ne peut pas livrer, et propose une autre variante
+            s''il en reste.'
+          example: 12
       required:
       - unit_price
       type: object
@@ -5889,6 +5905,17 @@ components:
             si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.
             Jamais `null` sur un `PATCH` : un prix s''edite, il ne s''efface pas.'
           nullable: true
+        stock_quantity:
+          maximum: 1000000
+          minimum: 0
+          type: integer
+          nullable: true
+          description: '**Le stock d''un produit sans choix**, pose sur sa variante unique
+            — meme raccourci que `unit_price`. Absent : inconnu, l''agent n''en dit rien.
+            `0` : epuise. Sur un `PATCH`, `null` efface la quantite (le stock redevient
+            inconnu). En lecture, renvoye seulement si le produit n''a qu''une variante ;
+            sinon lire `variants`.'
+          example: 12
         variants:
           items:
             $ref: '#/components/schemas/ProductVariantInput'
@@ -6000,6 +6027,17 @@ components:
             si le produit n''a qu''une variante ; sinon il est absent et il faut lire `variants`.
             Jamais `null` sur un `PATCH` : un prix s''edite, il ne s''efface pas.'
           nullable: true
+        stock_quantity:
+          maximum: 1000000
+          minimum: 0
+          type: integer
+          nullable: true
+          description: '**Le stock d''un produit sans choix**, pose sur sa variante unique
+            — meme raccourci que `unit_price`. Absent : inconnu, l''agent n''en dit rien.
+            `0` : epuise. Sur un `PATCH`, `null` efface la quantite (le stock redevient
+            inconnu). En lecture, renvoye seulement si le produit n''a qu''une variante ;
+            sinon lire `variants`.'
+          example: 12
         variants:
           items:
             $ref: '#/components/schemas/ProductVariantInput'
@@ -6057,6 +6095,10 @@ components:
         sku:
           type: string
           nullable: true
+        stock_quantity:
+          type: integer
+          nullable: true
+          description: 'Quantite en stock, `null` si vous ne la suivez pas. `0` : epuisee.'
         position:
           description: 'Rang de la variante dans le produit, a partir de 0 — celui de la liste
             que vous avez envoyee. Il rend les lectures stables : deux appels successifs renvoient
@@ -6109,6 +6151,11 @@ components:
           description: Prix de la variante unique. **Absent si le produit a plusieurs variantes**
             — lire `variants` dans ce cas.
           nullable: true
+        stock_quantity:
+          type: integer
+          nullable: true
+          description: 'Stock de la variante unique. **Absent si le produit a plusieurs
+            variantes** — lire `variants` dans ce cas ; `null` si vous ne le suivez pas.'
         variants:
           items:
             $ref: '#/components/schemas/ProductVariantOut'
@@ -8348,6 +8395,17 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et la
 politique de versioning décrite dans `docs/versioning.md`.
 
 ## [Unreleased]
+
+### Added
+
+- **Le stock, par variante.** `stock_quantity` (entier, facultatif) sur
+  chaque entree de `variants`, et en raccourci au niveau du produit pour
+  un article sans choix, a cote de `unit_price`. Absent ou `null` : vous
+  ne suivez pas le stock, rien ne change. **`0` : epuise** — l'agent ne
+  confirme pas un article qu'on ne peut pas livrer et propose une autre
+  variante s'il en reste. Renvoye a l'identique dans toutes les lectures
+  (`stock_quantity` sur chaque variante, et au niveau du produit quand il
+  n'en a qu'une).
 
 ### Changed
 
