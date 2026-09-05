@@ -10,6 +10,16 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Added
 
+- **Commande ouverte ou fermée.** `POST /v1/orders/{id}/close` avec une
+  `reason` (`delivered`, `returned`, `cancelled`, `other`) quand vous en
+  avez fini avec une commande ; `POST /v1/orders/{id}/reopen` pour vous
+  raviser. Un axe à part de `order_status`, qui continue de refléter les
+  appels. La fiche expose `closed`, `closed_at` et `closed_reason`. La
+  liste `GET /v1/orders` prend `?lifecycle=open|closed|all` (défaut
+  `open` : les commandes fermées sont masquées). Une commande fermée ne
+  peut plus être appelée : `POST /v1/calls` répond `409 order_closed`
+  tant qu'elle n'est pas rouverte.
+
 - **Le stock, par variante.** `stock_quantity` (entier, facultatif) sur
   chaque entree de `variants`, et en raccourci au niveau du produit pour
   un article sans choix, a cote de `unit_price`. Absent ou `null` : vous

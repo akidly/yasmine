@@ -455,6 +455,32 @@ Modifier ou archiver **pendant un appel en cours** est refusé.
 | 404 | `order_not_found` | Commande inexistante, archivée, ou d'une autre boutique — corps identique |
 | 409 | `order_call_in_progress` | Un appel n'est pas terminé : modifier, archiver ou rappeler attendra |
 | 422 | `validation_error` | ni `items` ni `items_text`, `customer`/`amount`/`items` à `null`, `external_id` différent de l'URL |
+| 409 | `order_closed` | `POST /v1/calls` sur une commande fermée : la rouvrir d'abord |
+
+### Fermer, rouvrir
+
+Le statut d'appel dit ce que le client a répondu. Il ne dit pas si
+**vous** en avez fini avec la commande — livrée, retournée, annulée de
+votre côté. Comme chez Shopify, c'est un axe à part : `closed`.
+
+```bash
+# Le colis est arrivé : le dossier est clos.
+curl -X POST "$BASE/v1/orders/CMD-2026-8891/close" \
+  -H "Authorization: Bearer $YK" -H "Content-Type: application/json" \
+  -d '{ "reason": "delivered" }'
+
+# Les commandes fermées ne sont plus listées par défaut ; les retrouver :
+curl "$BASE/v1/orders?lifecycle=closed" -H "Authorization: Bearer $YK"
+
+# Vous vous êtes trompé de commande : la rouvrir.
+curl -X POST "$BASE/v1/orders/CMD-2026-8891/reopen" -H "Authorization: Bearer $YK"
+```
+
+`reason` est obligatoire : `delivered`, `returned`, `cancelled` (annulée
+par vous — le client qui refuse au téléphone, c'est `order_status`) ou
+`other`. La fiche renvoie `closed`, `closed_at` et `closed_reason`. Une
+commande fermée **ne peut plus être appelée** (`409 order_closed`) tant
+qu'elle n'est pas rouverte. Fermer pendant un appel en cours est refusé.
 
 ## 1. Appel simple Maroc — commande à article unique (texte libre)
 

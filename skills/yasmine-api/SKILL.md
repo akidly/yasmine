@@ -127,6 +127,13 @@ order. Prefer this form over describing the order inline.
 - **While a call is in progress** `PATCH`, `DELETE` and a second call return
   `409 order_call_in_progress`.
 - **`customer`, `amount`, `items` cannot be set to `null`** (422).
+- **Open / closed is the merchant's axis**, separate from `order_status`
+  (which comes from calls). `POST /v1/orders/{id}/close` with `reason`
+  (`delivered`, `returned`, `cancelled`, `other`) when the merchant is done
+  with an order; `POST /v1/orders/{id}/reopen` to undo. The order exposes
+  `closed`, `closed_at`, `closed_reason`. `GET /v1/orders` hides closed
+  orders by default (`?lifecycle=closed|all`). A closed order cannot be
+  called: `POST /v1/calls` returns `409 order_closed` until it is reopened.
 - Do not send `customer` with `order_external_id` — it is the order's
   customer; change it with `PATCH` on the order. Do not send
   `order.previous_attempts` either: the server counts past calls.

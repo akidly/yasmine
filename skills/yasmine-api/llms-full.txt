@@ -906,6 +906,32 @@ Modifier ou archiver **pendant un appel en cours** est refusé.
 | 404 | `order_not_found` | Commande inexistante, archivée, ou d'une autre boutique — corps identique |
 | 409 | `order_call_in_progress` | Un appel n'est pas terminé : modifier, archiver ou rappeler attendra |
 | 422 | `validation_error` | ni `items` ni `items_text`, `customer`/`amount`/`items` à `null`, `external_id` différent de l'URL |
+| 409 | `order_closed` | `POST /v1/calls` sur une commande fermée : la rouvrir d'abord |
+
+### Fermer, rouvrir
+
+Le statut d'appel dit ce que le client a répondu. Il ne dit pas si
+**vous** en avez fini avec la commande — livrée, retournée, annulée de
+votre côté. Comme chez Shopify, c'est un axe à part : `closed`.
+
+```bash
+# Le colis est arrivé : le dossier est clos.
+curl -X POST "$BASE/v1/orders/CMD-2026-8891/close" \
+  -H "Authorization: Bearer $YK" -H "Content-Type: application/json" \
+  -d '{ "reason": "delivered" }'
+
+# Les commandes fermées ne sont plus listées par défaut ; les retrouver :
+curl "$BASE/v1/orders?lifecycle=closed" -H "Authorization: Bearer $YK"
+
+# Vous vous êtes trompé de commande : la rouvrir.
+curl -X POST "$BASE/v1/orders/CMD-2026-8891/reopen" -H "Authorization: Bearer $YK"
+```
+
+`reason` est obligatoire : `delivered`, `returned`, `cancelled` (annulée
+par vous — le client qui refuse au téléphone, c'est `order_status`) ou
+`other`. La fiche renvoie `closed`, `closed_at` et `closed_reason`. Une
+commande fermée **ne peut plus être appelée** (`409 order_closed`) tant
+qu'elle n'est pas rouverte. Fermer pendant un appel en cours est refusé.
 
 ## 1. Appel simple Maroc — commande à article unique (texte libre)
 
@@ -2299,6 +2325,7 @@ Certains `type` ajoutent des champs dédiés :
 | `order_item_unknown_product` | 422 | `POST /v1/calls` : une ligne référence un produit ou une variante qui n'existe pas dans la boutique de l'appel. Le déclarer, ou décrire l'article sur place — une ligne avec `name` et `unit_price` reste valide, un produit non déclaré ne doit jamais bloquer un appel. |
 | `order_item_variant_required` | 422 | `POST /v1/calls` : la ligne référence un produit à plusieurs déclinaisons sans préciser laquelle. Le `detail` **liste celles qui existent**. Aucun choix n'est fait au hasard : l'agent annoncerait un article non commandé. |
 | `order_not_found` | 404 | `GET`/`PATCH`/`DELETE` `/v1/orders/{external_id}`, ou `POST /v1/calls` avec `order_external_id`, sur une commande inexistante, archivée, ou d'un autre compte. **Corps identique dans les trois cas.** |
+| `order_closed` | 409 | `POST /v1/calls` avec `order_external_id` sur une commande que vous avez **fermée** (`POST /v1/orders/{id}/close`). Le dossier est clos : la rouvrir (`POST /v1/orders/{id}/reopen`) avant de rappeler le client. |
 | `order_call_in_progress` | 409 | Un appel n'est pas terminé sur cette commande : la modifier, l'archiver ou lancer un autre appel est refusé. Attendre la fin de l'appel — `call_in_progress` sur la fiche de la commande dit quand c'est possible. |
 | `product_not_found` | 404 | `GET`/`PATCH`/`DELETE` sur un produit inexistant, archivé, ou appartenant à une autre boutique. **Corps identique dans les trois cas.** L'identifiant d'un produit n'est unique qu'à l'intérieur d'une boutique. |
 | `product_external_id_already_exists` | 409 | `POST` d'un produit dont l'`external_id` est déjà pris **sur votre compte**, toutes boutiques confondues. La création est stricte : utiliser `PATCH` pour modifier. |
@@ -4650,6 +4677,9 @@ paths:
         sont masquées. `archived` ne montre qu'elles, `all` ne filtre pas.
         **`?order_status=`** ne garde que les commandes dans cet état
         (`PENDING`, `CONFIRMED`…).
+        **`?lifecycle=`** vaut `open` par défaut : les commandes que vous
+        avez fermées (`POST …/close`) sont masquées. `closed` ne montre
+        qu'elles, `all` ne filtre pas. Cet axe se cumule avec `status`.
       parameters:
         - $ref: "#/components/parameters/ShopExternalIdFiltre"
         - in: query
@@ -4669,6 +4699,13 @@ paths:
           name: order_status
           schema: { type: string, maxLength: 32 }
           description: Ne garder que les commandes dans cet état (`PENDING`, `CONFIRMED`…).
+        - in: query
+          name: lifecycle
+          schema:
+            type: string
+            enum: [open, closed, all]
+            default: open
+          description: "`open` : celles dont vous n'avez pas fini ; `closed` : celles que vous avez fermées ; `all` : les deux."
       responses:
         "200":
           description: Page de résultats.
@@ -4816,6 +4853,88 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/orders/{order_external_id}/close:
+    post:
+      operationId: closeOrder
+      summary: Fermer une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Vous en avez fini avec la commande — livrée, retournée, annulée par
+        vous, ou autre. Comme chez Shopify, c'est **un axe à part** du
+        statut d'appel : `order_status` continue de dire ce que le client
+        a répondu, `closed` dit que vous avez clos le dossier.
+
+        Une commande fermée **sort de la liste par défaut**
+        (`?lifecycle=closed` la retrouve) et **ne peut plus être appelée**
+        (`409 order_closed` sur `POST /v1/calls`) tant qu'elle n'est pas
+        rouverte. Déjà fermée : la raison est mise à jour, la date de
+        fermeture reste celle de la première fois.
+
+        **Refusé pendant un appel en cours** (`409 order_call_in_progress`).
+      parameters:
+        - $ref: "#/components/parameters/OrderExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderClose" }
+            examples:
+              livree:
+                summary: Le colis est arrivé
+                value: { reason: "delivered" }
+              retournee:
+                summary: Le client a refusé le colis
+                value: { reason: "returned" }
+      responses:
+        "200":
+          description: Fiche de la commande, fermée.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "409":
+          description: |
+            Un appel est en cours sur cette commande
+            (`order_call_in_progress`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: "`reason` absente ou hors liste (`validation_error`)."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/orders/{order_external_id}/reopen:
+    post:
+      operationId: reopenOrder
+      summary: Rouvrir une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Annule la fermeture : la commande revient dans la liste par défaut
+        et peut de nouveau être appelée. `closed_at` et `closed_reason`
+        repassent à `null`. Déjà ouverte : rien ne change, la fiche est
+        renvoyée telle quelle.
+      parameters:
+        - $ref: "#/components/parameters/OrderExternalId"
+      responses:
+        "200":
+          description: Fiche de la commande, ouverte.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
@@ -6387,6 +6506,22 @@ components:
       - amount
       - external_id
       type: object
+    OrderClose:
+      additionalProperties: false
+      description: 'Corps de `POST /v1/orders/{id}/close` : la raison, obligatoire.'
+      properties:
+        reason:
+          description: 'Pourquoi vous fermez la commande : `delivered` (livree), `returned` (retournee),
+            `cancelled` (annulee par vous) ou `other`.'
+          enum:
+          - delivered
+          - returned
+          - cancelled
+          - other
+          type: string
+      required:
+      - reason
+      type: object
     OrderPatch:
       additionalProperties: false
       description: 'Payload `PATCH` — modification partielle.
@@ -6691,6 +6826,25 @@ components:
           description: 'Vrai quand un appel n''est pas termine : la commande ne peut alors ni
             etre modifiee, ni archivee, ni rappelee.'
           type: boolean
+        closed:
+          description: 'Vrai quand vous en avez fini avec la commande (`POST …/close`) : elle
+            sort de la liste par defaut et ne peut plus etre appelee sans etre rouverte (`POST
+            …/reopen`). Un axe a part de `order_status`, qui lui vient des appels.'
+          type: boolean
+        closed_at:
+          format: date-time
+          type: string
+          nullable: true
+        closed_reason:
+          enum:
+          - delivered
+          - returned
+          - cancelled
+          - other
+          type: string
+          nullable: true
+          description: 'Pourquoi elle est fermee : `delivered`, `returned`, `cancelled` (par vous)
+            ou `other`. `null` tant qu''elle est ouverte.'
         status:
           enum:
           - active
@@ -6713,6 +6867,7 @@ components:
       - order_status
       - calls
       - call_in_progress
+      - closed
       - status
       - created_at
       - updated_at
@@ -8397,6 +8552,16 @@ politique de versioning décrite dans `docs/versioning.md`.
 ## [Unreleased]
 
 ### Added
+
+- **Commande ouverte ou fermée.** `POST /v1/orders/{id}/close` avec une
+  `reason` (`delivered`, `returned`, `cancelled`, `other`) quand vous en
+  avez fini avec une commande ; `POST /v1/orders/{id}/reopen` pour vous
+  raviser. Un axe à part de `order_status`, qui continue de refléter les
+  appels. La fiche expose `closed`, `closed_at` et `closed_reason`. La
+  liste `GET /v1/orders` prend `?lifecycle=open|closed|all` (défaut
+  `open` : les commandes fermées sont masquées). Une commande fermée ne
+  peut plus être appelée : `POST /v1/calls` répond `409 order_closed`
+  tant qu'elle n'est pas rouverte.
 
 - **Le stock, par variante.** `stock_quantity` (entier, facultatif) sur
   chaque entree de `variants`, et en raccourci au niveau du produit pour

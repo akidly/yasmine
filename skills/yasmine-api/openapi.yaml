@@ -1823,6 +1823,9 @@ paths:
         sont masquées. `archived` ne montre qu'elles, `all` ne filtre pas.
         **`?order_status=`** ne garde que les commandes dans cet état
         (`PENDING`, `CONFIRMED`…).
+        **`?lifecycle=`** vaut `open` par défaut : les commandes que vous
+        avez fermées (`POST …/close`) sont masquées. `closed` ne montre
+        qu'elles, `all` ne filtre pas. Cet axe se cumule avec `status`.
       parameters:
         - $ref: "#/components/parameters/ShopExternalIdFiltre"
         - in: query
@@ -1842,6 +1845,13 @@ paths:
           name: order_status
           schema: { type: string, maxLength: 32 }
           description: Ne garder que les commandes dans cet état (`PENDING`, `CONFIRMED`…).
+        - in: query
+          name: lifecycle
+          schema:
+            type: string
+            enum: [open, closed, all]
+            default: open
+          description: "`open` : celles dont vous n'avez pas fini ; `closed` : celles que vous avez fermées ; `all` : les deux."
       responses:
         "200":
           description: Page de résultats.
@@ -1989,6 +1999,88 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/orders/{order_external_id}/close:
+    post:
+      operationId: closeOrder
+      summary: Fermer une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Vous en avez fini avec la commande — livrée, retournée, annulée par
+        vous, ou autre. Comme chez Shopify, c'est **un axe à part** du
+        statut d'appel : `order_status` continue de dire ce que le client
+        a répondu, `closed` dit que vous avez clos le dossier.
+
+        Une commande fermée **sort de la liste par défaut**
+        (`?lifecycle=closed` la retrouve) et **ne peut plus être appelée**
+        (`409 order_closed` sur `POST /v1/calls`) tant qu'elle n'est pas
+        rouverte. Déjà fermée : la raison est mise à jour, la date de
+        fermeture reste celle de la première fois.
+
+        **Refusé pendant un appel en cours** (`409 order_call_in_progress`).
+      parameters:
+        - $ref: "#/components/parameters/OrderExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderClose" }
+            examples:
+              livree:
+                summary: Le colis est arrivé
+                value: { reason: "delivered" }
+              retournee:
+                summary: Le client a refusé le colis
+                value: { reason: "returned" }
+      responses:
+        "200":
+          description: Fiche de la commande, fermée.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "409":
+          description: |
+            Un appel est en cours sur cette commande
+            (`order_call_in_progress`).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: "`reason` absente ou hors liste (`validation_error`)."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/orders/{order_external_id}/reopen:
+    post:
+      operationId: reopenOrder
+      summary: Rouvrir une commande
+      tags: [Orders]
+      x-status: live
+      x-rate-limit: "120/minute"
+      description: |
+        Annule la fermeture : la commande revient dans la liste par défaut
+        et peut de nouveau être appelée. `closed_at` et `closed_reason`
+        repassent à `null`. Déjà ouverte : rien ne change, la fiche est
+        renvoyée telle quelle.
+      parameters:
+        - $ref: "#/components/parameters/OrderExternalId"
+      responses:
+        "200":
+          description: Fiche de la commande, ouverte.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderOut" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
@@ -3560,6 +3652,22 @@ components:
       - amount
       - external_id
       type: object
+    OrderClose:
+      additionalProperties: false
+      description: 'Corps de `POST /v1/orders/{id}/close` : la raison, obligatoire.'
+      properties:
+        reason:
+          description: 'Pourquoi vous fermez la commande : `delivered` (livree), `returned` (retournee),
+            `cancelled` (annulee par vous) ou `other`.'
+          enum:
+          - delivered
+          - returned
+          - cancelled
+          - other
+          type: string
+      required:
+      - reason
+      type: object
     OrderPatch:
       additionalProperties: false
       description: 'Payload `PATCH` — modification partielle.
@@ -3864,6 +3972,25 @@ components:
           description: 'Vrai quand un appel n''est pas termine : la commande ne peut alors ni
             etre modifiee, ni archivee, ni rappelee.'
           type: boolean
+        closed:
+          description: 'Vrai quand vous en avez fini avec la commande (`POST …/close`) : elle
+            sort de la liste par defaut et ne peut plus etre appelee sans etre rouverte (`POST
+            …/reopen`). Un axe a part de `order_status`, qui lui vient des appels.'
+          type: boolean
+        closed_at:
+          format: date-time
+          type: string
+          nullable: true
+        closed_reason:
+          enum:
+          - delivered
+          - returned
+          - cancelled
+          - other
+          type: string
+          nullable: true
+          description: 'Pourquoi elle est fermee : `delivered`, `returned`, `cancelled` (par vous)
+            ou `other`. `null` tant qu''elle est ouverte.'
         status:
           enum:
           - active
@@ -3886,6 +4013,7 @@ components:
       - order_status
       - calls
       - call_in_progress
+      - closed
       - status
       - created_at
       - updated_at
