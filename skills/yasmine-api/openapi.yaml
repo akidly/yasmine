@@ -1141,6 +1141,10 @@ paths:
 
         **Création stricte** : un `external_id` déjà utilisé renvoie un 409,
         jamais une mise à jour implicite. Pour modifier, utilisez `PATCH`.
+        Une référence ne se réutilise pas, même après archivage : une
+        boutique recréée porte un nouvel `external_id`. L'historique de la
+        boutique archivée reste filtrable par son ancienne référence
+        (`GET /v1/orders?shop_external_id=…`, `GET /v1/products?…`).
 
         **Pas d'`Idempotency-Key` requise**, contrairement à `POST /v1/calls` :
         l'unicité de l'`external_id` rend déjà la création rejouable sans

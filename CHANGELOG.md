@@ -31,6 +31,18 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Changed
 
+- **Boutique archivée : introuvable, sans exception.** `POST /v1/calls`
+  sur une boutique archivée répond `404 shop_not_found`, y compris quand
+  la demande porte un `shop_info` complet — un appel ne ressuscite plus
+  une fiche archivée. Le `409 shop_external_id_already_exists` explique
+  qu'une référence, active ou archivée, ne se réutilise pas : une boutique
+  recréée porte un nouvel `external_id`.
+
+- **L'historique d'une boutique archivée reste filtrable.**
+  `GET /v1/orders?shop_external_id=…` et `GET /v1/products?shop_external_id=…`
+  acceptent la référence d'une boutique archivée au lieu de répondre 404 ;
+  seule la création sous cette boutique reste refusée.
+
 - **`customer_service_hours` accepte 200 caractères** (100 auparavant),
   sur la création et la mise à jour d'une boutique. De quoi décrire une
   semaine complète, jour par jour, avec une pause déjeuner. Le champ
