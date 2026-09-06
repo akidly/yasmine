@@ -130,10 +130,10 @@ paths:
         produit » a une réponse.
 
         **L'appel part dans la plage d'appel.** Celle de la commande, sinon
-        celle de la boutique, sinon tous les jours de 9 h à 21 h dans le
+        celle de la boutique, sinon tous les jours de 9 h à 22 h dans le
         fuseau de la boutique. Une demande faite hors plage est acceptée
         et part à la prochaine ouverture ; une relance y est recalée de la
-        même façon. Aucune plage ne peut sortir de 9 h – 21 h.
+        même façon. Aucune plage ne peut sortir de 9 h – 22 h.
 
         **Idempotency-Key obligatoire** : header `Idempotency-Key`
         requis (1-255 chars, UUID v4 recommandé). Scope par reseller, TTL
@@ -2618,10 +2618,10 @@ components:
             au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
             plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
             Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
-            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
             Vaut pour toutes les commandes de la boutique qui n''en declarent pas une propre.
-            Absente : tous les jours de 9 h a 21 h.'
+            Absente : tous les jours de 9 h a 22 h.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           description: Identifiant de la boutique dans VOTRE systeme. Sert d'adresse dans l'URL,
@@ -2862,10 +2862,10 @@ components:
             au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
             plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
             Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
-            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
             Vaut pour toutes les commandes de la boutique qui n''en declarent pas une propre.
-            Absente : tous les jours de 9 h a 21 h.'
+            Absente : tous les jours de 9 h a 22 h.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           type: string
@@ -3636,9 +3636,9 @@ components:
             au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
             plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
             Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
-            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
-            Absente : la plage de la boutique, sinon tous les jours de 9 h a 21 h. `null` sur
+            Absente : la plage de la boutique, sinon tous les jours de 9 h a 22 h. `null` sur
             un PATCH revient a celle de la boutique.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
@@ -3844,9 +3844,9 @@ components:
             au format des horaires OpenStreetMap — jours en anglais abreges, heures sur 24 h,
             plusieurs creneaux par jour separes par une virgule, plusieurs regles par un point-virgule.
             Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
-            avant 9 h ni apres 21 h**, dans le fuseau de la boutique : une plage qui en sort est
+            avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
-            Absente : la plage de la boutique, sinon tous les jours de 9 h a 21 h. `null` sur
+            Absente : la plage de la boutique, sinon tous les jours de 9 h a 22 h. `null` sur
             un PATCH revient a celle de la boutique.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
@@ -4654,9 +4654,9 @@ components:
           description: |
             Plage d'appel de cette commande, au format des horaires
             OpenStreetMap : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00`.
-            **Jamais avant 9 h ni après 21 h**, dans le fuseau de la
+            **Jamais avant 9 h ni après 22 h**, dans le fuseau de la
             boutique — une plage qui en sort est refusée (422). Absente : la
-            plage de la boutique, sinon tous les jours de 9 h à 21 h. Un
+            plage de la boutique, sinon tous les jours de 9 h à 22 h. Un
             appel demandé hors plage est accepté et part à la prochaine
             ouverture.
           example: "Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00"

@@ -31,6 +31,11 @@ politique de versioning décrite dans `docs/versioning.md`.
 
 ### Changed
 
+- **Les appels partent jusqu'à 22 h.** La plage d'appel était bornée
+  9 h – 21 h dans le fuseau de la boutique ; elle va désormais de 9 h à
+  22 h, aux mêmes conditions : une plage qui en sort est refusée (422),
+  jamais rognée. Sans plage déclarée, c'est tous les jours de 9 h à 22 h.
+
 - **Boutique archivée : introuvable, sans exception.** `POST /v1/calls`
   sur une boutique archivée répond `404 shop_not_found`, y compris quand
   la demande porte un `shop_info` complet — un appel ne ressuscite plus
