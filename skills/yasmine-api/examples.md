@@ -403,7 +403,7 @@ anglais abrégés, heures sur 24 h. Ici du lundi au vendredi matin et
 après-midi, le samedi après-midi, jamais le dimanche. Jamais avant 9 h ni
 après 22 h : une plage qui en sort est refusée. Absente, c'est celle de la
 boutique (`call_hours` sur `POST /v1/shops`) qui vaut, sinon tous les
-jours de 9 h à 22 h. Un appel lancé hors plage est accepté et part à la
+du lundi au samedi de 10 h à 21 h et le dimanche de 11 h à 20 h. Un appel lancé hors plage est accepté et part à la
 prochaine ouverture. Une ligne décrite sur place avec `name`
 reste valide (frais de port, cadeau, article sur mesure). La réponse porte
 `order_status` (`PENDING` tant qu'aucun appel n'a abouti), la liste `calls`

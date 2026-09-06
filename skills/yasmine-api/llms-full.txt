@@ -854,7 +854,7 @@ anglais abrégés, heures sur 24 h. Ici du lundi au vendredi matin et
 après-midi, le samedi après-midi, jamais le dimanche. Jamais avant 9 h ni
 après 22 h : une plage qui en sort est refusée. Absente, c'est celle de la
 boutique (`call_hours` sur `POST /v1/shops`) qui vaut, sinon tous les
-jours de 9 h à 22 h. Un appel lancé hors plage est accepté et part à la
+du lundi au samedi de 10 h à 21 h et le dimanche de 11 h à 20 h. Un appel lancé hors plage est accepté et part à la
 prochaine ouverture. Une ligne décrite sur place avec `name`
 reste valide (frais de port, cadeau, article sur mesure). La réponse porte
 `order_status` (`PENDING` tant qu'aucun appel n'a abouti), la liste `calls`
@@ -2984,7 +2984,7 @@ paths:
         produit » a une réponse.
 
         **L'appel part dans la plage d'appel.** Celle de la commande, sinon
-        celle de la boutique, sinon tous les jours de 9 h à 22 h dans le
+        celle de la boutique, sinon du lundi au samedi de 10 h à 21 h et le dimanche de 11 h à 20 h, dans le
         fuseau de la boutique. Une demande faite hors plage est acceptée
         et part à la prochaine ouverture ; une relance y est recalée de la
         même façon. Aucune plage ne peut sortir de 9 h – 22 h.
@@ -5475,7 +5475,7 @@ components:
             avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
             Vaut pour toutes les commandes de la boutique qui n''en declarent pas une propre.
-            Absente : tous les jours de 9 h a 22 h.'
+            Absente : du lundi au samedi de 10 h a 21 h et le dimanche de 11 h a 20 h.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           description: Identifiant de la boutique dans VOTRE systeme. Sert d'adresse dans l'URL,
@@ -5719,7 +5719,7 @@ components:
             avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
             Vaut pour toutes les commandes de la boutique qui n''en declarent pas une propre.
-            Absente : tous les jours de 9 h a 22 h.'
+            Absente : du lundi au samedi de 10 h a 21 h et le dimanche de 11 h a 20 h.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
           type: string
@@ -6492,7 +6492,7 @@ components:
             Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
             avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
-            Absente : la plage de la boutique, sinon tous les jours de 9 h a 22 h. `null` sur
+            Absente : la plage de la boutique, sinon du lundi au samedi de 10 h a 21 h et le dimanche de 11 h a 20 h. `null` sur
             un PATCH revient a celle de la boutique.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
@@ -6700,7 +6700,7 @@ components:
             Exemple : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00` (dimanche : jamais). **Jamais
             avant 9 h ni apres 22 h**, dans le fuseau de la boutique : une plage qui en sort est
             refusee (422). Un appel demande hors plage est accepte et part a la prochaine ouverture.
-            Absente : la plage de la boutique, sinon tous les jours de 9 h a 22 h. `null` sur
+            Absente : la plage de la boutique, sinon du lundi au samedi de 10 h a 21 h et le dimanche de 11 h a 20 h. `null` sur
             un PATCH revient a celle de la boutique.'
           example: Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00
         external_id:
@@ -7510,7 +7510,7 @@ components:
             OpenStreetMap : `Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00`.
             **Jamais avant 9 h ni après 22 h**, dans le fuseau de la
             boutique — une plage qui en sort est refusée (422). Absente : la
-            plage de la boutique, sinon tous les jours de 9 h à 22 h. Un
+            plage de la boutique, sinon du lundi au samedi de 10 h à 21 h et le dimanche de 11 h à 20 h. Un
             appel demandé hors plage est accepté et part à la prochaine
             ouverture.
           example: "Mo-Fr 09:30-12:00,13:00-19:00; Sa 13:00-19:00"
@@ -8581,7 +8581,7 @@ politique de versioning décrite dans `docs/versioning.md`.
 - **Les appels partent jusqu'à 22 h.** La plage d'appel était bornée
   9 h – 21 h dans le fuseau de la boutique ; elle va désormais de 9 h à
   22 h, aux mêmes conditions : une plage qui en sort est refusée (422),
-  jamais rognée. Sans plage déclarée, c'est tous les jours de 9 h à 22 h.
+  jamais rognée. Sans plage déclarée, c'est du lundi au samedi de 10 h à 21 h et le dimanche de 11 h à 20 h.
 
 - **Boutique archivée : introuvable, sans exception.** `POST /v1/calls`
   sur une boutique archivée répond `404 shop_not_found`, y compris quand
